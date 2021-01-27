@@ -1,0 +1,311 @@
+<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#"
+     xml:base="http://robots.kmi.ac.uk/ont/1.0/spatial-onto"
+     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+     xmlns:xml="http://www.w3.org/XML/1998/namespace"
+     xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+     xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+     ontologyIRI="http://robots.kmi.ac.uk/ont/1.0/spatial-onto">
+    <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
+    <Prefix name="rdf" IRI="http://www.w3.org/1999/02/22-rdf-syntax-ns#"/>
+    <Prefix name="xml" IRI="http://www.w3.org/XML/1998/namespace"/>
+    <Prefix name="xsd" IRI="http://www.w3.org/2001/XMLSchema#"/>
+    <Prefix name="rdfs" IRI="http://www.w3.org/2000/01/rdf-schema#"/>
+    <Import>https://raw.githubusercontent.com/kmi-robots/spatial-KB/main/data/ont/geosparql_vocab_all.rdf?token=AFIHZYMQEAABV3HPIHDJPVTACGPY2</Import>
+    <Declaration>
+        <Class IRI="#Abstraction"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#BackHalfspace"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#BackProjection"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Body"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#BottomHalfspace"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#BottomProjection"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#BoundingBox2D"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#BoundingBox3D"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Bounds2D"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Bounds3D"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ConvexHull2D"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ConvexHull3D"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#FrontHalfspace"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#FrontProjection"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#HalfSpace"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Joint"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#LeftHalfspace"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#LeftProjection"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Link"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ObjectModel"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Position2D"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Position3D"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Positions"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#Projection"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#ReferenceFrame"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#RightHalfspace"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#RightProjection"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#TopHalfspace"/>
+    </Declaration>
+    <Declaration>
+        <Class IRI="#TopProjection"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasAbstraction"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasBody"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasFrame"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasJoint"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasLink"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasParentFrame"/>
+    </Declaration>
+    <SubClassOf>
+        <Class IRI="#Abstraction"/>
+        <Class IRI="http://www.opengis.net/ont/geosparql#Geometry"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#BackHalfspace"/>
+        <Class IRI="#HalfSpace"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#BackProjection"/>
+        <Class IRI="#Projection"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Body"/>
+        <Class IRI="http://www.opengis.net/ont/geosparql#Geometry"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Body"/>
+        <Class IRI="http://www.opengis.net/ont/sf#PolyhedralSurface"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Body"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasJoint"/>
+            <Class IRI="#Joint"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Body"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasLink"/>
+            <Class IRI="#Link"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#BottomHalfspace"/>
+        <Class IRI="#HalfSpace"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#BottomProjection"/>
+        <Class IRI="#Projection"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#BoundingBox2D"/>
+        <Class IRI="#Bounds2D"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#BoundingBox3D"/>
+        <Class IRI="#Bounds3D"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Bounds2D"/>
+        <Class IRI="#Abstraction"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Bounds2D"/>
+        <Class IRI="http://www.opengis.net/ont/sf#Polygon"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Bounds3D"/>
+        <Class IRI="#Abstraction"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Bounds3D"/>
+        <Class IRI="http://www.opengis.net/ont/sf#PolyhedralSurface"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ConvexHull2D"/>
+        <Class IRI="#Bounds2D"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ConvexHull3D"/>
+        <Class IRI="#Bounds3D"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#FrontHalfspace"/>
+        <Class IRI="#HalfSpace"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#FrontProjection"/>
+        <Class IRI="#Projection"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#HalfSpace"/>
+        <Class IRI="#Abstraction"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#HalfSpace"/>
+        <Class IRI="http://www.opengis.net/ont/sf#PolyhedralSurface"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#LeftHalfspace"/>
+        <Class IRI="#HalfSpace"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#LeftProjection"/>
+        <Class IRI="#Projection"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Link"/>
+        <Class IRI="http://www.opengis.net/ont/geosparql#Geometry"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Link"/>
+        <Class IRI="http://www.opengis.net/ont/sf#PolyhedralSurface"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ObjectModel"/>
+        <Class IRI="http://www.opengis.net/ont/geosparql#Feature"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ObjectModel"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasAbstraction"/>
+            <Class IRI="#Abstraction"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ObjectModel"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasBody"/>
+            <Class IRI="#Body"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ObjectModel"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasFrame"/>
+            <Class IRI="#ReferenceFrame"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Position2D"/>
+        <Class IRI="#Positions"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Position3D"/>
+        <Class IRI="#Positions"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Positions"/>
+        <Class IRI="#Abstraction"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Positions"/>
+        <Class IRI="http://www.opengis.net/ont/sf#Point"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Projection"/>
+        <Class IRI="#Abstraction"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Projection"/>
+        <Class IRI="http://www.opengis.net/ont/sf#PolyhedralSurface"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#ReferenceFrame"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasParentFrame"/>
+            <Class IRI="#ReferenceFrame"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#RightHalfspace"/>
+        <Class IRI="#HalfSpace"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#RightProjection"/>
+        <Class IRI="#Projection"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#TopHalfspace"/>
+        <Class IRI="#HalfSpace"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#TopProjection"/>
+        <Class IRI="#Projection"/>
+    </SubClassOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#hasJoint"/>
+        <ObjectProperty abbreviatedIRI="owl:topObjectProperty"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#hasParentFrame"/>
+        <ObjectProperty abbreviatedIRI="owl:topObjectProperty"/>
+    </SubObjectPropertyOf>
+</Ontology>
+
+
+
+<!-- Generated by the OWL API (version 4.5.9.2019-02-01T07:24:44Z) https://github.com/owlcs/owlapi -->
+
