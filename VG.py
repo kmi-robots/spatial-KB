@@ -1,2 +1,2 @@
-"""Visual Genome data prep"""
+"""Visual Genome methods"""
 

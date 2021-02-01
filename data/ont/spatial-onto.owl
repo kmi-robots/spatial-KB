@@ -6,6 +6,7 @@
      xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
      xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
      ontologyIRI="http://robots.kmi.ac.uk/ont/1.0/spatial-onto">
+    <Prefix name="" IRI="http://robots.kmi.ac.uk/ont/1.0/spatial-onto"/>
     <Prefix name="owl" IRI="http://www.w3.org/2002/07/owl#"/>
     <Prefix name="rdf" IRI="http://www.w3.org/1999/02/22-rdf-syntax-ns#"/>
     <Prefix name="xml" IRI="http://www.w3.org/XML/1998/namespace"/>
@@ -58,6 +59,9 @@
         <Class IRI="#HalfSpace"/>
     </Declaration>
     <Declaration>
+        <Class IRI="#IntrisicReferenceFrame"/>
+    </Declaration>
+    <Declaration>
         <Class IRI="#Joint"/>
     </Declaration>
     <Declaration>
@@ -94,16 +98,46 @@
         <Class IRI="#RightProjection"/>
     </Declaration>
     <Declaration>
+        <Class IRI="#Robot"/>
+    </Declaration>
+    <Declaration>
         <Class IRI="#TopHalfspace"/>
     </Declaration>
     <Declaration>
         <Class IRI="#TopProjection"/>
     </Declaration>
     <Declaration>
+        <ObjectProperty IRI="#DirectionalQSR"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#EuclideanDistance"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#IsNearTo"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#IsNextTo"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#MetricQSR"/>
+    </Declaration>
+    <Declaration>
         <ObjectProperty IRI="#hasAbstraction"/>
     </Declaration>
     <Declaration>
         <ObjectProperty IRI="#hasBody"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasDbID"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasDiameter"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#hasDistance"/>
     </Declaration>
     <Declaration>
         <ObjectProperty IRI="#hasFrame"/>
@@ -116,6 +150,36 @@
     </Declaration>
     <Declaration>
         <ObjectProperty IRI="#hasParentFrame"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#isAbove"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#isBelow"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#isEastOf"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#isNorthOf"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#isSouthOf"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#isWestOf"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#maxDistance"/>
+    </Declaration>
+    <Declaration>
+        <ObjectProperty IRI="#minDistance"/>
+    </Declaration>
+    <Declaration>
+        <DataProperty IRI="#isCloser"/>
+    </Declaration>
+    <Declaration>
+        <DataProperty IRI="#isFarther"/>
     </Declaration>
     <SubClassOf>
         <Class IRI="#Abstraction"/>
@@ -208,6 +272,10 @@
         <Class IRI="http://www.opengis.net/ont/sf#PolyhedralSurface"/>
     </SubClassOf>
     <SubClassOf>
+        <Class IRI="#IntrisicReferenceFrame"/>
+        <Class IRI="#ReferenceFrame"/>
+    </SubClassOf>
+    <SubClassOf>
         <Class IRI="#LeftHalfspace"/>
         <Class IRI="#HalfSpace"/>
     </SubClassOf>
@@ -288,6 +356,31 @@
         <Class IRI="#Projection"/>
     </SubClassOf>
     <SubClassOf>
+        <Class IRI="#Robot"/>
+        <Class IRI="http://www.opengis.net/ont/geosparql#Feature"/>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Robot"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasAbstraction"/>
+            <Class IRI="#Abstraction"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Robot"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasBody"/>
+            <Class IRI="#Body"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="#Robot"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasFrame"/>
+            <Class IRI="#ReferenceFrame"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
         <Class IRI="#TopHalfspace"/>
         <Class IRI="#HalfSpace"/>
     </SubClassOf>
@@ -295,6 +388,95 @@
         <Class IRI="#TopProjection"/>
         <Class IRI="#Projection"/>
     </SubClassOf>
+    <SubClassOf>
+        <Class IRI="http://www.opengis.net/ont/geosparql#SpatialObject"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasDistance"/>
+            <Class IRI="http://www.opengis.net/ont/geosparql#SpatialObject"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="http://www.opengis.net/ont/sf#Geometry"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasDbID"/>
+            <Class IRI="http://www.opengis.net/ont/sf#Geometry"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <SubClassOf>
+        <Class IRI="http://www.opengis.net/ont/sf#Point"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#hasDiameter"/>
+            <Class IRI="http://www.opengis.net/ont/sf#Point"/>
+        </ObjectSomeValuesFrom>
+    </SubClassOf>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehContains"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#rcc8ntppi"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehContains"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#sfContains"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehCoveredBy"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#rcc8tpp"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehCovers"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#rcc8tppi"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehDisjoint"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#rcc8dc"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehDisjoint"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#sfDisjoint"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehEquals"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#rcc8eq"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehEquals"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#sfEquals"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehInside"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#rcc8ntpp"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehMeet"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#rcc8ec"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehOverlap"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#rcc8po"/>
+    </EquivalentObjectProperties>
+    <EquivalentObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehOverlap"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#sfOverlaps"/>
+    </EquivalentObjectProperties>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#EuclideanDistance"/>
+        <ObjectProperty IRI="#hasDistance"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#IsNearTo"/>
+        <ObjectProperty IRI="#MetricQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#IsNextTo"/>
+        <ObjectProperty IRI="#MetricQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#hasDiameter"/>
+        <ObjectProperty IRI="#hasDistance"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#hasDiameter"/>
+        <ObjectProperty IRI="#maxDistance"/>
+    </SubObjectPropertyOf>
     <SubObjectPropertyOf>
         <ObjectProperty IRI="#hasJoint"/>
         <ObjectProperty abbreviatedIRI="owl:topObjectProperty"/>
@@ -303,6 +485,152 @@
         <ObjectProperty IRI="#hasParentFrame"/>
         <ObjectProperty abbreviatedIRI="owl:topObjectProperty"/>
     </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#isAbove"/>
+        <ObjectProperty IRI="#DirectionalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#isBelow"/>
+        <ObjectProperty IRI="#DirectionalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#isEastOf"/>
+        <ObjectProperty IRI="#DirectionalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#isNorthOf"/>
+        <ObjectProperty IRI="#DirectionalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#isSouthOf"/>
+        <ObjectProperty IRI="#DirectionalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#isWestOf"/>
+        <ObjectProperty IRI="#DirectionalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#maxDistance"/>
+        <ObjectProperty IRI="#EuclideanDistance"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="#minDistance"/>
+        <ObjectProperty IRI="#EuclideanDistance"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehContains"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehCoveredBy"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehCovers"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehDisjoint"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehEquals"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehInside"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehMeet"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehOverlap"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#sfCrosses"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#sfIntersects"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#sfTouches"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <SubObjectPropertyOf>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#sfWithin"/>
+        <ObjectProperty IRI="#MereotopologicalQSR"/>
+    </SubObjectPropertyOf>
+    <InverseObjectProperties>
+        <ObjectProperty IRI="#isAbove"/>
+        <ObjectProperty IRI="#isBelow"/>
+    </InverseObjectProperties>
+    <InverseObjectProperties>
+        <ObjectProperty IRI="#isEastOf"/>
+        <ObjectProperty IRI="#isWestOf"/>
+    </InverseObjectProperties>
+    <InverseObjectProperties>
+        <ObjectProperty IRI="#isNorthOf"/>
+        <ObjectProperty IRI="#isSouthOf"/>
+    </InverseObjectProperties>
+    <InverseObjectProperties>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehCoveredBy"/>
+        <ObjectProperty IRI="http://www.opengis.net/ont/geosparql#ehCovers"/>
+    </InverseObjectProperties>
+    <SymmetricObjectProperty>
+        <ObjectProperty IRI="#EuclideanDistance"/>
+    </SymmetricObjectProperty>
+    <SymmetricObjectProperty>
+        <ObjectProperty IRI="#hasDistance"/>
+    </SymmetricObjectProperty>
+    <SymmetricObjectProperty>
+        <ObjectProperty IRI="#minDistance"/>
+    </SymmetricObjectProperty>
+    <IrreflexiveObjectProperty>
+        <ObjectProperty IRI="#EuclideanDistance"/>
+    </IrreflexiveObjectProperty>
+    <IrreflexiveObjectProperty>
+        <ObjectProperty IRI="#hasDistance"/>
+    </IrreflexiveObjectProperty>
+    <IrreflexiveObjectProperty>
+        <ObjectProperty IRI="#minDistance"/>
+    </IrreflexiveObjectProperty>
+    <DataPropertyDomain>
+        <DataProperty IRI="#isCloser"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#minDistance"/>
+            <Class IRI="http://www.opengis.net/ont/geosparql#SpatialObject"/>
+        </ObjectSomeValuesFrom>
+    </DataPropertyDomain>
+    <DataPropertyDomain>
+        <DataProperty IRI="#isFarther"/>
+        <ObjectSomeValuesFrom>
+            <ObjectProperty IRI="#minDistance"/>
+            <Class IRI="http://www.opengis.net/ont/geosparql#SpatialObject"/>
+        </ObjectSomeValuesFrom>
+    </DataPropertyDomain>
+    <DataPropertyRange>
+        <DataProperty IRI="#isCloser"/>
+        <Datatype abbreviatedIRI="xsd:boolean"/>
+    </DataPropertyRange>
+    <DataPropertyRange>
+        <DataProperty IRI="#isFarther"/>
+        <Datatype abbreviatedIRI="xsd:boolean"/>
+    </DataPropertyRange>
+    <AnnotationAssertion>
+        <AnnotationProperty abbreviatedIRI="rdfs:comment"/>
+        <IRI>#IntrisicReferenceFrame</IRI>
+        <Literal>The reference frame determined  by  the  orientation of the coordinate system chosen by the user.</Literal>
+    </AnnotationAssertion>
+    <AnnotationAssertion>
+        <AnnotationProperty abbreviatedIRI="rdfs:comment"/>
+        <IRI>#hasDiameter</IRI>
+        <Literal>Given by the max Euclidean distance between two points belonging to the same SpatialObject.</Literal>
+    </AnnotationAssertion>
 </Ontology>
 
 
