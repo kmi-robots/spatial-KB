@@ -5,7 +5,7 @@ from nltk.corpus import wordnet as wn
 from collections import Counter
 
 from onto import init_onto
-from PostGIS import connect_DB, disconnect_DB
+from PostGIS import *
 
 class KnowledgeBase():
     def __init__(self, args):
@@ -21,20 +21,22 @@ class KnowledgeBase():
         # Open connection
         connection, cursor = connect_DB(self.db_user,self.dbname)
 
+        # Initialise table structure
+        create_VG_table(cursor)
+
         # Check if already populated with data
         if not os.path.isfile(self.path_to_VGstats): #data preparation needed
-            self.VG_stats = self.data_prep()
+            self.VG_stats = self.data_prep(cursor) # also insert data in DB table
         else:
             with open(self.path_to_VGstats) as fin:
                 self.VG_stats = json.load(fin)
 
-        #Query db
-
         #Close connection, to avoid db issues
         if connection is not None:
+            connection.commit()  # Commit all changes to DB
             disconnect_DB(connection,cursor)
 
-    def data_prep(self):
+    def data_prep(self,cursor):
 
         # Load VG raw relationships and aliases
         with open(self.path_to_VGrel) as ind, open(self.path_to_predicate_aliases) as aliasin:
@@ -78,16 +80,27 @@ class KnowledgeBase():
                 # for predicates we need aliases because they may have no synset associated
                 aliases = [alias_set for alias_set in alias_mergedlist if pred in alias_set][0]
 
-                sub_coords = (rel['subject']['x'], rel['subject']['x'] + rel['subject']['w'], \
-                              rel['subject']['y'], rel['subject']['y'] + rel['subject']['h'])
-
-                # 1. TODO Populate spatial DB # (All, regardless of which subset has both sub_syn and obj_syn, i.e., we are only interested in polygons and preds)
-
+                #2D Bounding box corners
+                x1,y1 = rel['subject']['x'],rel['subject']['y']
+                x2,y2 = (rel['subject']['x'] + rel['subject']['w']), y1
+                x3,y3 = x1, (rel['subject']['y'] + rel['subject']['h'])
+                x4,y4 = x2, y3
+                #PostGIS formatting: from top-left corner anti-clockwise
+                # and repeating top-left twice to close the ring
+                sub_coords = ((x1,y1), (x3,y3), (x4,y4), (x2,y2), (x1,y1))
+                x1, y1 = rel['object']['x'], rel['object']['y']
+                x2, y2 = (rel['object']['x'] + rel['object']['w']), y1
+                x3, y3 = x1, (rel['object']['y'] + rel['object']['h'])
+                x4, y4 = x2, y3
+                obj_coords = ((x1,y1), (x3,y3), (x4,y4), (x2,y2), (x1,y1))
+                # 1. Populate spatial DB # (All, regardless of which subset has both sub_syn and obj_syn, i.e., we are only interested in polygons and preds)
+                add_VG_row(cursor,[rel_id,pred,pred_synset, sub_coords, obj_coords])
                 # 2. update VG predicate statistics (only for records with univoque sub_syn,obj_syn pair)
 
                 if len(sub_syn) >0 and len(obj_syn)>0:
                     # How many times subj - pred - obj?
                     if pred not in VG_stats["predicates"]:
+                        VG_stats["predicates"][pred] ={}
                         VG_stats["predicates"][pred]["relations"] = Counter()
                         VG_stats["predicates"][pred]["aliases"] = aliases
                     VG_stats["predicates"][pred]["relations"][str((str(sub_syn[0]), str(obj_syn[0])))] +=1
