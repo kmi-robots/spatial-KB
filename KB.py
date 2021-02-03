@@ -1,121 +1,112 @@
 """KB class"""
-import json
 import os
-from nltk.corpus import wordnet as wn
-from collections import Counter
+import time
 
 from onto import init_onto
 from PostGIS import *
+from VG import *
+
 
 class KnowledgeBase():
     def __init__(self, args):
         self.ontology = init_onto(args.IRI)
         # Load raw external KB data
         self.path_to_VGrel = os.path.join(args.path_to_data, 'relationships.json')
-        self.path_to_VGstats = os.path.join(args.path_to_data, 'VG_stats.json')
+        self.path_to_VGstats = os.path.join(args.path_to_data, 'VG_spatial_stats.json')
         self.path_to_predicate_aliases = os.path.join(args.path_to_data, 'relationship_aliases.txt')
         self.db_user = os.environ['USER']
         self.dbname = args.dbname
+        self.predicate_set = ["in", "on", "in front of", "behind", "to left of", "to right of",
+                 "next to", "under", "above"] #Derived from Spatial Sense (Yang et al., 2019)
 
     def db_session(self):
         # Open connection
-        connection, cursor = connect_DB(self.db_user,self.dbname)
+        self.connection, self.cursor = connect_DB(self.db_user,self.dbname)
 
         # Initialise table structure
-        create_VG_table(cursor)
+        create_VG_table(self.cursor)
 
         # Check if already populated with data
         if not os.path.isfile(self.path_to_VGstats): #data preparation needed
-            self.VG_stats = self.data_prep(cursor) # also insert data in DB table
+            self.VG_stats = self.data_prep() # also insert data in DB table
         else:
             with open(self.path_to_VGstats) as fin:
                 self.VG_stats = json.load(fin)
 
         #Close connection, to avoid db issues
-        if connection is not None:
-            connection.commit()  # Commit all changes to DB
-            disconnect_DB(connection,cursor)
+        if self.connection is not None:
+            self.connection.commit()  # Commit all changes to DB
+            disconnect_DB(self.connection,self.cursor)
 
-    def data_prep(self,cursor):
 
+    def data_prep(self):
+        print("Preparing spatial data first...")
+        start = time.time()
         # Load VG raw relationships and aliases
-        with open(self.path_to_VGrel) as ind, open(self.path_to_predicate_aliases) as aliasin:
-            alias_list = aliasin.read().splitlines()[:-1] # last line is empty
-            raw_data = json.load(ind)
-
-        alias_index = {}
-        for aline in alias_list:
-            alist = aline.split(",")
-            if alist[0] in alias_index: alias_index[alist[0]].extend(alist[1:])
-            else:  alias_index[alist[0]] = alist
+        raw_data, alias_index = load_rel_bank(self)
+        # flatten alias index
         alias_mergedlist = list(alias_index.values())
 
         VG_stats = {k: {} for k in ["predicates", "subjects", "objects"]}
         for entry in raw_data:
             img_rels = entry["relationships"]  # all relationships for a given image
             for rel in img_rels:
-                rel_id = rel['relationship_id']
                 pred = rel['predicate'].lower()
+                # for predicates we need aliases (if any is found) because synsets can be unknown or too generic
+                aliases = []
+                for alias_set in alias_mergedlist:
+                    if pred in alias_set:
+                        aliases = alias_set
+                        break
+                intersection = list(set(aliases) & set(self.predicate_set))
                 sub_syn = rel['subject']['synsets']
                 obj_syn = rel['object']['synsets']
-                try:
-                    sub = rel['subject']['name']
-                    obj = rel['object']['name']
-                except KeyError:  # no annotation for subject or object
-                    # skip if not even synset is available
-                    if len(sub_syn) == 0 or len(obj_syn) == 0: continue
 
-                if len(sub_syn) > 1 or len(obj_syn) > 1 or pred == '' or pred == ' ':
-                    # Skipping composite periods
-                    # (e.g.  subject: green trees seen  pred: green trees by road object: trees on roadside.)
-                    # # ( e.g.  subject: see cupboard  pred: cupboard black object: cupboard not white. )
-                    # as well as empty predicates
+                if len(intersection) == 0 or len(sub_syn) != 1 or len(obj_syn) != 1 or pred == '' or pred == ' ':
+                    # Filtering out:
+                    # (i) relations with predicates and aliases outside SpatialSense predicate set
+                    # (ii) relations without both sub and object synsets
+                    # (iii) compound periods, i.e., more than one synset per entity
+                    # e.g.  subject: green trees seen  pred: green trees by road object: trees on roadside.)
+                    # e.g.  subject: see cupboard  pred: cupboard black object: cupboard not white. )
+                    # (iv) as well as empty predicates
                     continue
-                try:
-                    pred_synset = wn.synset(rel['synsets'][0])
-                    postag = pred_synset.pos()
-                except IndexError:  # synset predicate not specified
-                    pred_synset, postag = None, None
 
-                # for predicates we need aliases because they may have no synset associated
-                aliases = [alias_set for alias_set in alias_mergedlist if pred in alias_set][0]
+                # Disambiguate ON from ON FRONT OF based on postgis operators on 2D bboxes
+                if pred in alias_index["on"]:
+                    # 1. Populate spatial DB #
+                    rel_id = rel['relationship_id'] #to use as primary key
 
-                #2D Bounding box corners
-                x1,y1 = rel['subject']['x'],rel['subject']['y']
-                x2,y2 = (rel['subject']['x'] + rel['subject']['w']), y1
-                x3,y3 = x1, (rel['subject']['y'] + rel['subject']['h'])
-                x4,y4 = x2, y3
-                #PostGIS formatting: from top-left corner anti-clockwise
-                # and repeating top-left twice to close the ring
-                sub_coords = ((x1,y1), (x3,y3), (x4,y4), (x2,y2), (x1,y1))
-                x1, y1 = rel['object']['x'], rel['object']['y']
-                x2, y2 = (rel['object']['x'] + rel['object']['w']), y1
-                x3, y3 = x1, (rel['object']['y'] + rel['object']['h'])
-                x4, y4 = x2, y3
-                obj_coords = ((x1,y1), (x3,y3), (x4,y4), (x2,y2), (x1,y1))
-                # 1. Populate spatial DB # (All, regardless of which subset has both sub_syn and obj_syn, i.e., we are only interested in polygons and preds)
-                add_VG_row(cursor,[rel_id,pred,pred_synset, sub_coords, obj_coords])
-                # 2. update VG predicate statistics (only for records with univoque sub_syn,obj_syn pair)
+                    # 2D Bounding box corners of subject (e.g., "cup ON table" subj = cup, obj = table)
+                    # PostGIS formatting: from top-left corner anti-clockwise
+                    # and repeating top-left twice to close the ring
+                    x1, y1 = rel['subject']['x'], rel['subject']['y']
+                    x2, y2 = x1, (y1 + rel['subject']['h'])
+                    x3, y3 = (x1 + rel['subject']['w']), (y1 + rel['subject']['h'])
+                    x4, y4 = (x1 + rel['subject']['w']), y1
+                    sub_coords = ((x1, y1), (x2, y2), (x3, y3), (x4, y4), (x1, y1))
 
-                if len(sub_syn) >0 and len(obj_syn)>0:
-                    # How many times subj - pred - obj?
-                    if pred not in VG_stats["predicates"]:
-                        VG_stats["predicates"][pred] ={}
-                        VG_stats["predicates"][pred]["relations"] = Counter()
-                        VG_stats["predicates"][pred]["aliases"] = aliases
-                    VG_stats["predicates"][pred]["relations"][str((str(sub_syn[0]), str(obj_syn[0])))] +=1
+                    # top 2D half-space projection of object bbox
+                    x1, y1 = rel['object']['x'], (rel['object']['y'] - rel['object']['h'])
+                    x2, y2 = rel['object']['x'], rel['object']['y']
+                    x3, y3 = (x1 + rel['object']['w']), rel['object']['y']
+                    x4, y4 = (x1 + rel['object']['w']), (rel['object']['y']-rel['object']['h'])
+                    obj_top_proj_coords = ((x1, y1), (x2, y2), (x3, y3), (x4, y4), (x1, y1))
 
-                    # how many times subject in relationship of type pred?
-                    if str(sub_syn[0]) not in VG_stats["subjects"]:
-                        VG_stats["subjects"][str(sub_syn[0])] = Counter()
-                    VG_stats["subjects"][str(sub_syn[0])][pred] += 1
+                    add_VG_row(self.cursor,[rel_id,pred,aliases, sub_coords, obj_top_proj_coords])
+                    self.connection.commit() # new row needs to be visible/up-to-date to compute operations on it
 
-                    # how many times object in relationship of type pred?
-                    if str(obj_syn[0]) not in VG_stats["objects"]:
-                        VG_stats["objects"][str(obj_syn[0])] = Counter()
-                    VG_stats["objects"][str(obj_syn[0])][pred] += 1
+                    # Do the bottom-half space projection of subject box and the object bbox overlap?
+                    # fetch PostGis relations between bounding box pair
+                    overlaps,touches = compute_spatial_op(self.cursor, rel_id)
+                    if not (overlaps or touches):
+                        pred = 'near' # generalises to "near" because not strictly "on"
+
+                # 2. update VG predicate statistics
+                VG_stats = update_VG_stats(VG_stats, pred, aliases,alias_index,sub_syn, obj_syn)
 
         # save stats locally
         with open(self.path_to_VGstats, 'w') as fout:
             json.dump(VG_stats,fout)
+        print("Data preparation complete... took %f seconds" % (time.time() - start))
         return VG_stats
