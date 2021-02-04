@@ -2,42 +2,35 @@
 import os
 import time
 
-from onto import init_onto
+#from onto import init_onto
 from PostGIS import *
 from VG import *
 
 
 class KnowledgeBase():
     def __init__(self, args):
-        self.ontology = init_onto(args.IRI)
+        #self.ontology = init_onto(args.IRI)
         # Load raw external KB data
         self.path_to_VGrel = os.path.join(args.path_to_data, 'relationships.json')
         self.path_to_VGstats = os.path.join(args.path_to_data, 'VG_spatial_stats.json')
         self.path_to_predicate_aliases = os.path.join(args.path_to_data, 'relationship_aliases.txt')
-        self.db_user = os.environ['USER']
-        self.dbname = args.dbname
         self.predicate_set = ["in", "on", "in front of", "behind", "to left of", "to right of",
                  "next to", "under", "above"] #Derived from Spatial Sense (Yang et al., 2019)
 
-    def db_session(self):
-        # Open connection
-        self.connection, self.cursor = connect_DB(self.db_user,self.dbname)
+    def load_data(self,reasoner):
+        # Same db session as reasoner
+        self.cursor, self.connection = reasoner.cursor, reasoner.connection
 
-        # Initialise table structure
+        # Initialise table structure, if not exists
         create_VG_table(self.cursor)
 
-        # Check if already populated with data
+        # Check if data were already pre-processed before
         if not os.path.isfile(self.path_to_VGstats): #data preparation needed
             self.VG_stats = self.data_prep() # also insert data in DB table
         else:
             with open(self.path_to_VGstats) as fin:
                 self.VG_stats = json.load(fin)
-
-        #Close connection, to avoid db issues
-        if self.connection is not None:
-            self.connection.commit()  # Commit all changes to DB
-            disconnect_DB(self.connection,self.cursor)
-
+        return self
 
     def data_prep(self):
         print("Preparing spatial data first...")
@@ -78,8 +71,8 @@ class KnowledgeBase():
                     rel_id = rel['relationship_id'] #to use as primary key
 
                     # 2D Bounding box corners of subject (e.g., "cup ON table" subj = cup, obj = table)
-                    # PostGIS formatting: from top-left corner anti-clockwise
-                    # and repeating top-left twice to close the ring
+                    # Format: from top-left corner anti-clockwise
+                    # PostGIS requires to repeat top-left twice to close the ring
                     x1, y1 = rel['subject']['x'], rel['subject']['y']
                     x2, y2 = x1, (y1 + rel['subject']['h'])
                     x3, y3 = (x1 + rel['subject']['w']), (y1 + rel['subject']['h'])

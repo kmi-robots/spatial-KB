@@ -4,7 +4,8 @@ Interface methods for spatial database
 import psycopg2
 from psycopg2 import Error
 import keyring # used for more secure pw storage
-
+import networkx as nx
+import matplotlib.pyplot as plt
 
 def connect_DB(user,dbname):
     try:
@@ -34,7 +35,7 @@ def create_VG_table(cursor):
         "predicate_name varchar NOT NULL,"
         "predicate_aliases varchar,"
         "subject_polygon geometry,"
-        "object_top_projection geometry;")
+        "object_top_projection geometry);")
 
         #"ST_Overlaps boolean,"
         #"ST_Touches boolean,"
@@ -94,3 +95,58 @@ def coords2poly(coord_list):
     as string defining Polygon in PostgreSQL"""
     coords_ = [str(x) + " " + str(y) for x, y in coord_list]
     return "POLYGON(("+",".join(t for t in coords_)+"))"
+
+
+def threed_spatial_query(reasoner, search_radius=6, topological_rels=["St_Overlaps"\
+                            ,"ST_Touches","ST_Within"]):
+    # for all objects in spatial DB
+    reasoner.cursor.execute("""SELECT object_id FROM test_map""")
+    all_ids = [str(i[0]) for i in reasoner.cursor.fetchall()]
+
+    semmap = nx.MultiDiGraph()
+    semmap.add_nodes_from(all_ids) # add one node per object
+
+    for i in all_ids:
+        #Find ST relations with all nearby points within given radius
+        reasoner.cursor.execute("""
+                SELECT g2.object_id, ST_Overlaps(g1.object_polyhedral_surface, g2.object_polyhedral_surface),
+                ST_Touches(g1.object_polyhedral_surface, g2.object_polyhedral_surface), 
+                ST_Within(g1.object_polyhedral_surface, g2.object_polyhedral_surface)
+                FROM test_map AS g1, test_map AS g2
+                WHERE ST_3DDWithin(g1.object_polyhedral_surface, g2.object_polyhedral_surface, %s)
+                AND g1.object_id = %s AND g2.object_id != %s
+                ;""", (str(search_radius),i,i))
+
+        results = [(r[0], list(r[1:])) for r in reasoner.cursor.fetchall()] #[i for i in reasoner.cursor.fetchall()]
+
+        for n,ops in results:
+            if not semmap.has_edge(i,n):    # if object and neighbour not connected already
+                                            # avoiding duplicates and reducing computational cost
+                tgt_rels = [name for k,name in enumerate(topological_rels) if ops[k]]
+                # add edges between node pairs based on results
+                # True = edge, False = no edge
+                for index, name in enumerate(tgt_rels):
+                    semmap.add_edge(i, n)
+                    semmap.add_edge(n, i)  # topological are bidirectional
+                    semmap[i][n][index]["name"] = name
+                    if name =="ST_Within":
+                        semmap[n][i][index]["name"] = "ST_Contains" #contains is inverse of within
+                    else:
+                        semmap[n][i][index]["name"] = name
+
+        print(semmap.edges(data=True))
+        #plot_graph(semmap)
+        reasoner.cursor.execute("""
+        SELECT ST_x(geom), ST_y(geom), ST_z(geom) FROM (
+        SELECT (ST_DumpPoints(object_polyhedral_surface)).geom FROM test_map
+        WHERE object_id=%s
+        ) as xyz;""", (i,))
+        box_coords = reasoner.cursor.fetchall()
+        continue
+    return semmap,[]
+
+def plot_graph(G):
+
+    nx.draw(G)
+    plt.draw()
+    plt.show()
