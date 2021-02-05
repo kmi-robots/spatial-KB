@@ -32,12 +32,15 @@ class ObjectReasoner():
             disconnect_DB(self.connection, self.cursor)
 
     def query_map(self):
+        #extract all min 3D booxes for all polyhedrons in spatial DB
+        extracted_bboxes = query_all_bboxes(self)
 
-        # For 3D object in map (meeting some selection criteria)
-        # Find nearby 3D object
-        # and compute built-in postGIS operators
-        localQSR = threed_spatial_query(self)
+        # Extrude 3D bboxes based on halfspace projection model
+        extracted_bboxes = compute_hs_projections(extracted_bboxes)
 
-        # Add operators based on halfspace projection model
-        localQSR = add_directional_qsr(localQSR)
+        # Create QSR graph
+        # For each 3D object in map (optional: meeting some selection criteria)
+        # Find nearby 3D objects and their min 3D bounding box
+        localQSR = extract_QSRs(self,extracted_bboxes)
+
         return localQSR

@@ -21,7 +21,7 @@ def cuboid_data(o, size=(1,1,1)):
     for i in range(3): # multiply by given input size
         X[:,:,i] *= size[i]
     X += np.array(o) # shift based on origin coordinates
-
+    print(X)
     return X
 
 
