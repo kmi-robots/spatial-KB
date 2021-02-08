@@ -97,27 +97,32 @@ def coords2polygon(coord_list):
     coords_ = [str(x) + " " + str(y) for x, y in coord_list]
     return "POLYGON(("+",".join(t for t in coords_)+"))"
 
-def coords2polyhedral(vertex_list):
-    """# Given list of 8 vertices as
-    # [ (Xmin, Ymin, Zmin)
-        (Xmin, Ymax, Zmin)
-        (Xmin, Ymax, Zmax)
-        (Xmin, Ymin, Zmax)
-        (Xmax, Ymin, Zmin)
-        (Xmax, Ymax, Zmin)
-        (Xmax, Ymax, Zmax)
-        (Xmax, Ymin, Zmax) ]
+def minmax_to_polyhedral(minmax):
+    """
+    Expects list of 3D extent of order [ST_XMin, ST_YMin, ST_ZMin, ST_XMax,ST_YMax, ST_ZMax]
     formats it as polyhedral surface string
     """
-    # first 2 faces are given by input order
-    coords_ = vertex_list[:4]+ list(vertex_list[0]) #close ring
-    #coords_.extend(vertex_list[4:]+list(vertex_list[4]))
-    #coords_.extend(vertex_list[:2]+vertex_list[:5]+list(vertex_list[0]))
-    coords_.extend(vertex_list[1:3] + vertex_list[5:7] + list(vertex_list[1]))
-    coords_.extend(vertex_list[3:5] + vertex_list[6:8] + list(vertex_list[3]))
-    coords_.extend(list(vertex_list[0]) + list(vertex_list[3]) +list(vertex_list[4]) + list(vertex_list[7]) + list(vertex_list[0]))
-    #TODO complete this
-    return "POLYHEDRAL SURFACE Z(("+",".join(t for t in coords_)+"))"
+    all_face_vs = []
+    for i,nm in enumerate(['xmin', 'ymin', 'zmin', 'xmax','ymax', 'zmax']):
+        #keep one dimension fixed and permutate all the others
+        r_minmax = minmax.copy()
+        r_minmax.remove(minmax[i])
+        if i<3: r_minmax.remove(minmax[i+3])# e.g., remove all xs
+        else: r_minmax.remove(minmax[i-3]) #avoid index out of range
+        A = [r_minmax[0], r_minmax[2]]
+        B = [r_minmax[1], r_minmax[3]]
+        #and convert to formatted string
+        if nm[0] =='x':
+            vs = [" ".join((str(minmax[i]),str(p[0]),str(p[1]))) for p in itertools.product(A,B)]
+        elif nm[0] == 'y':
+            vs = [" ".join((str(p[0]),str(minmax[i]),str(p[1]))) for p in itertools.product(A, B)]
+        else: #z
+            vs = [" ".join((str(p[0]),str(p[1]),str(minmax[i]))) for p in itertools.product(A, B)]
+        vs.append(vs[0]) #lastly, close ring, i.e., repeat one coord triple
+        all_face_vs.append(vs)
+
+    s = ["(( "+",".join(v for v in face) +"))" for face in all_face_vs]
+    return "POLYHEDRALSURFACE Z("+",".join(f for f in s)+")"
 
 def minmax_to_vertex(minmax):
     # Expects list of 3D extent of order [ST_XMin, ST_YMin, ST_ZMin, ST_XMax,ST_YMax, ST_ZMax]
@@ -135,13 +140,13 @@ def minmax_to_vertex(minmax):
 
 def query_all_bboxes(reasoner):
     # for all objects in spatial DB
+    # Find min 3D box bounding polyhedral surface (ST_3DExtent)
+    # and  extract bbox vertex coords
     reasoner.cursor.execute("""SELECT object_id FROM test_map""")
     all_ids = [str(i[0]) for i in reasoner.cursor.fetchall()]
 
     box_coords ={}
     for i in all_ids:
-        # Find min 3D box bounding polyhedral surface (ST_3DExtent)
-        # and  extract bbox vertex coords
         reasoner.cursor.execute("""
             SELECT ST_XMin(g1), ST_YMin(g1), ST_ZMin(g1),
             ST_XMax(g1), ST_YMax(g1), ST_ZMax(g1)
@@ -175,14 +180,24 @@ def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Over
     for i in bbox_dict.keys():
         # Transform halfspace projections from minmax list to vertex coords
         # and convert vertex list to polyhedral surface WKT
-        top_hs = coords2polyhedral(minmax_to_vertex(bbox_dict[i]["top_hs"]))
-        btm_hs = coords2polyhedral(minmax_to_vertex(bbox_dict[i]["btm_hs"]))
-        front_hs = coords2polyhedral(minmax_to_vertex(bbox_dict[i]["front_hs"]))
-        back_hs = coords2polyhedral(minmax_to_vertex(bbox_dict[i]["back_hs"]))
-        left_hs = coords2polyhedral(minmax_to_vertex(bbox_dict[i]["left_hs"]))
-        right_hs = coords2polyhedral(minmax_to_vertex(bbox_dict[i]["right_hs"]))
+        top_hs = minmax_to_polyhedral(bbox_dict[i]["top_hs"])
+        btm_hs = minmax_to_polyhedral(bbox_dict[i]["btm_hs"])
+        front_hs = minmax_to_polyhedral(bbox_dict[i]["front_hs"])
+        back_hs = minmax_to_polyhedral(bbox_dict[i]["back_hs"])
+        left_hs = minmax_to_polyhedral(bbox_dict[i]["left_hs"])
+        right_hs = minmax_to_polyhedral(bbox_dict[i]["right_hs"])
 
         #Alter table to add halfspace projection data
+        reasoner.cursor.execute("""
+            UPDATE test_map 
+            SET bottomhsproj = ST_GeomFromText(%s),
+                tophsproj = ST_GeomFromText(%s),
+                lefthsproj = ST_GeomFromText(%s),
+                righthsproj = ST_GeomFromText(%s),
+                fronthsproj = ST_GeomFromText(%s),
+                backhsproj = ST_GeomFromText(%s)
+            WHERE object_id=%s
+        ;""", (btm_hs, top_hs, left_hs, right_hs,front_hs,back_hs,i))
         reasoner.connection.commit() # make new data visible for next queries
 
         # Find all nearby points within given radius
