@@ -101,6 +101,7 @@ def minmax_to_polyhedral(minmax):
     """
     Expects list of 3D extent of order [ST_XMin, ST_YMin, ST_ZMin, ST_XMax,ST_YMax, ST_ZMax]
     formats it as polyhedral surface string
+    if order does not matter, vertex combinations can be found dynamically
     """
     all_face_vs = []
     for i,nm in enumerate(['xmin', 'ymin', 'zmin', 'xmax','ymax', 'zmax']):
@@ -121,7 +122,31 @@ def minmax_to_polyhedral(minmax):
         vs.append(vs[0]) #lastly, close ring, i.e., repeat one coord triple
         all_face_vs.append(vs)
 
-    s = ["(( "+",".join(v for v in face) +"))" for face in all_face_vs]
+    s = ["(("+",".join(v for v in face) +"))" for face in all_face_vs]
+    return "POLYHEDRALSURFACE Z("+",".join(f for f in s)+")"
+
+def ordered_minmax_to_polyhedral(minmax):
+    #Order of drawing faces(clockwise, anticlockwise) counts in postgre
+    # vertex ordering is hardcoded
+    xmin_, ymin_, zmin_, xmax_,ymax_, zmax_ = minmax
+    faces= [ [[xmin_,ymin_,zmin_],[xmin_,ymax_,zmin_],[xmax_,ymax_,zmin_],[xmax_,ymin_,zmin_],[xmin_,ymin_,zmin_]], #clockwise
+            [[xmin_,ymin_,zmax_],[xmax_,ymin_,zmax_],[xmax_,ymax_,zmax_],[xmin_,ymax_,zmax_],[xmin_,ymin_,zmax_]],  #counterclockwise
+            [[xmin_,ymin_,zmin_],[xmin_,ymin_,zmax_],[xmin_,ymax_,zmax_],[xmin_,ymax_,zmin_],[xmin_,ymin_,zmin_]],  #clockwise
+            [[xmin_,ymax_,zmin_],[xmin_,ymax_,zmax_],[xmax_,ymax_,zmax_],[xmax_,ymax_,zmin_],[xmin_,ymax_,zmin_]],  #counterclockwise
+            [[xmax_,ymax_,zmin_],[xmax_,ymax_,zmax_],[xmax_,ymin_,zmax_],[xmax_,ymin_,zmin_],[xmax_,ymax_,zmin_]],  #counterclockwise
+            [[xmax_,ymin_,zmin_],[xmax_,ymin_,zmax_],[xmin_,ymin_,zmax_],[xmin_,ymin_,zmin_],[xmax_,ymin_,zmin_]]   #clockwise
+            ]
+
+    s = []
+    for face in faces:
+        t_face = []
+        for coord_triple in face:
+            coord_triple =[str(c) for c in coord_triple]
+            t_triple = " ".join(coord_triple)
+            t_face.append(t_triple)
+
+        t_face = "(("+",".join(t_face)+"))"
+        s.append(t_face)
     return "POLYHEDRALSURFACE Z("+",".join(f for f in s)+")"
 
 def minmax_to_vertex(minmax):
@@ -157,35 +182,39 @@ def query_all_bboxes(reasoner):
         ) as xyz;""", (i,))
 
         minmax = reasoner.cursor.fetchall()[0]
-        box_vertices= minmax_to_vertex(minmax)
+        box_vertices = minmax_to_vertex(minmax)
+        core_obj = ordered_minmax_to_polyhedral(minmax) #add ordered boundingbox polygon to table
+        reasoner.cursor.execute("""
+                    UPDATE test_map 
+                    SET bbox = ST_GeomFromText(%s)
+                    WHERE object_id=%s;""", (core_obj,i))
+        reasoner.connection.commit()
         box_coords[i] ={}
         box_coords[i]["vertices"] = box_vertices
+        box_coords[i]["minmax"] = minmax
         box_coords[i]["x_extent"] = minmax[3] - minmax[0]
         box_coords[i]["y_extent"] = minmax[4] - minmax[1]
         box_coords[i]["z_extent"] = minmax[5] - minmax[2]
-
     return box_coords
 
 def plot_graph(G):
-
     nx.draw(G)
     plt.draw()
     plt.show()
 
-def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Overlaps"\
-                            ,"ST_Touches","ST_Within"]):
+def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Overlaps","ST_Touches","ST_Within"]):
     semmap = nx.MultiDiGraph()
     semmap.add_nodes_from(bbox_dict.keys())  # add one node per object_id
 
     for i in bbox_dict.keys():
-        # Transform halfspace projections from minmax list to vertex coords
-        # and convert vertex list to polyhedral surface WKT
-        top_hs = minmax_to_polyhedral(bbox_dict[i]["top_hs"])
-        btm_hs = minmax_to_polyhedral(bbox_dict[i]["btm_hs"])
-        front_hs = minmax_to_polyhedral(bbox_dict[i]["front_hs"])
-        back_hs = minmax_to_polyhedral(bbox_dict[i]["back_hs"])
-        left_hs = minmax_to_polyhedral(bbox_dict[i]["left_hs"])
-        right_hs = minmax_to_polyhedral(bbox_dict[i]["right_hs"])
+
+        # Transform halfspace projections from minmax list to textual format expected by Postgre
+        top_hs = ordered_minmax_to_polyhedral(bbox_dict[i]["top_hs"])#minmax_to_polyhedral(bbox_dict[i]["top_hs"])
+        btm_hs = ordered_minmax_to_polyhedral(bbox_dict[i]["btm_hs"])
+        front_hs = ordered_minmax_to_polyhedral(bbox_dict[i]["front_hs"])
+        back_hs = ordered_minmax_to_polyhedral(bbox_dict[i]["back_hs"])
+        left_hs = ordered_minmax_to_polyhedral(bbox_dict[i]["left_hs"])
+        right_hs = ordered_minmax_to_polyhedral(bbox_dict[i]["right_hs"])
 
         #Alter table to add halfspace projection data
         reasoner.cursor.execute("""
@@ -207,15 +236,15 @@ def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Over
         # Directional QSRs
         # - Intersections between obj2 and halfspace projections of obj1
         reasoner.cursor.execute("""
-                        SELECT g2.object_id, ST_3DIntersects(g1.object_polyhedral_surface, g2.object_polyhedral_surface),
-                        ST_Volume(g1.object_polyhedral_surface), ST_Volume(g2.object_polyhedral_surface), 
-                        ST_Volume(ST_3DIntersection(g1.object_polyhedral_surface, g2.object_polyhedral_surface)),
-                        ST_3DIntersects(g1.bottomhsproj,g2.object_polyhedral_surface), 
-                        ST_3DIntersects(g1.tophsproj,g2.object_polyhedral_surface),
-                        ST_3DIntersects(g1.lefthsproj,g2.object_polyhedral_surface), 
-                        ST_3DIntersects(g1.righthsproj,g2.object_polyhedral_surface),
-                        ST_3DIntersects(g1.fronthsproj,g2.object_polyhedral_surface), 
-                        ST_3DIntersects(g1.backhsproj,g2.object_polyhedral_surface)
+                        SELECT g2.object_id, ST_3DIntersects(g1.bbox, g2.bbox),
+                        ST_Volume(ST_MakeSolid(g1.bbox)), ST_Volume(ST_MakeSolid(g2.bbox)), 
+                        ST_Volume(ST_MakeSolid(ST_3DIntersection(g1.bbox, g2.bbox))),
+                        ST_3DIntersects(g1.bottomhsproj,g2.bbox), 
+                        ST_3DIntersects(g1.tophsproj,g2.bbox),
+                        ST_3DIntersects(g1.lefthsproj,g2.bbox), 
+                        ST_3DIntersects(g1.righthsproj,g2.bbox),
+                        ST_3DIntersects(g1.fronthsproj,g2.bbox), 
+                        ST_3DIntersects(g1.backhsproj,g2.bbox)
                         FROM test_map AS g1, test_map AS g2
                         WHERE ST_3DDWithin(g1.object_polyhedral_surface, g2.object_polyhedral_surface, %s)
                         AND g1.object_id = %s AND g2.object_id != %s
