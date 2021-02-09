@@ -175,8 +175,7 @@ def query_all_bboxes(reasoner):
         reasoner.cursor.execute("""
             SELECT ST_XMin(g1), ST_YMin(g1), ST_ZMin(g1),
             ST_XMax(g1), ST_YMax(g1), ST_ZMax(g1)
-            FROM (
-                    SELECT ST_3DExtent(object_polyhedral_surface) as g1
+            FROM (  SELECT ST_3DExtent(object_polyhedral_surface) as g1
                     FROM test_map
                     WHERE object_id = %s
         ) as xyz;""", (i,))
