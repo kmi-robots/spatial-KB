@@ -200,12 +200,22 @@ def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Over
         ;""", (btm_hs, top_hs, left_hs, right_hs,front_hs,back_hs,i))
         reasoner.connection.commit() # make new data visible for next queries
 
-        # Find all nearby points within given radius
-        # TODO find intersections with halfspace projections to add above, below, L/R, front, behind
+        # Find all nearby points within given radius and compute
+        # topological operators for each obj pair
+        # - Interesection between the two objects (replaces 2D overlap and 2D touch)
+        # - Volume comparisons (e.g., if the volume of the intersection equals the volume of obj1, then obj1 is fully contained in obj2)
+        # Directional QSRs
+        # - Intersections between obj2 and halfspace projections of obj1
         reasoner.cursor.execute("""
-                        SELECT g2.object_id, ST_Overlaps(g1.object_polyhedral_surface, g2.object_polyhedral_surface),
-                        ST_Touches(g1.object_polyhedral_surface, g2.object_polyhedral_surface), 
-                        ST_Within(g1.object_polyhedral_surface, g2.object_polyhedral_surface)
+                        SELECT g2.object_id, ST_3DIntersects(g1.object_polyhedral_surface, g2.object_polyhedral_surface),
+                        ST_Volume(g1.object_polyhedral_surface), ST_Volume(g2.object_polyhedral_surface), 
+                        ST_Volume(ST_3DIntersection(g1.object_polyhedral_surface, g2.object_polyhedral_surface)),
+                        ST_3DIntersects(g1.bottomhsproj,g2.object_polyhedral_surface), 
+                        ST_3DIntersects(g1.tophsproj,g2.object_polyhedral_surface),
+                        ST_3DIntersects(g1.lefthsproj,g2.object_polyhedral_surface), 
+                        ST_3DIntersects(g1.righthsproj,g2.object_polyhedral_surface),
+                        ST_3DIntersects(g1.fronthsproj,g2.object_polyhedral_surface), 
+                        ST_3DIntersects(g1.backhsproj,g2.object_polyhedral_surface)
                         FROM test_map AS g1, test_map AS g2
                         WHERE ST_3DDWithin(g1.object_polyhedral_surface, g2.object_polyhedral_surface, %s)
                         AND g1.object_id = %s AND g2.object_id != %s
@@ -213,6 +223,7 @@ def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Over
 
         results = [(r[0], list(r[1:])) for r in reasoner.cursor.fetchall()]  # [i for i in reasoner.cursor.fetchall()]
 
+        #TODO express QSRs as a graph and set rules for inverse relations
         for n, ops in results:
             if not semmap.has_edge(i, n):  # if object and neighbour not connected already
                 # avoiding duplicates and reducing computational cost
@@ -221,7 +232,7 @@ def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Over
                 # True = edge, False = no edge
                 for index, name in enumerate(tgt_rels):
                     semmap.add_edge(i, n)
-                    semmap.add_edge(n, i)  # topological are bidirectional
+                    semmap.add_edge(n, i)  # topological ones are bidirectional
                     semmap[i][n][index]["name"] = name
                     if name == "ST_Within":
                         semmap[n][i][index]["name"] = "ST_Contains"  # contains is inverse of within

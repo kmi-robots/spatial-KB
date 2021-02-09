@@ -22,9 +22,9 @@ class ObjectReasoner():
             # Query semantic map for QSR
             self.localQSR = self.query_map()
 
-            # Validate and correct based on KB relations
+            # TODO Validate and correct based on KB relations
 
-            # Update local QSR DB with new predictions
+            # TODO Update local QSR DB with new predictions
 
             # Commit all changes to DB
             self.connection.commit()
