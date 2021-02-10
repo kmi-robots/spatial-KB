@@ -5,8 +5,7 @@ import itertools
 import psycopg2
 from psycopg2 import Error
 import keyring # used for more secure pw storage
-import networkx as nx
-import matplotlib.pyplot as plt
+
 
 def connect_DB(user,dbname):
     try:
@@ -196,17 +195,8 @@ def query_all_bboxes(reasoner):
         box_coords[i]["z_extent"] = minmax[5] - minmax[2]
     return box_coords
 
-def plot_graph(G):
-    nx.draw(G)
-    plt.draw()
-    plt.show()
 
-def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Overlaps","ST_Touches","ST_Within"]):
-    semmap = nx.MultiDiGraph()
-    semmap.add_nodes_from(bbox_dict.keys())  # add one node per object_id
-
-    for i in bbox_dict.keys():
-
+def query_map_neighbours(reasoner, bbox_dict, i, search_radius=6):
         # Transform halfspace projections from minmax list to textual format expected by Postgre
         top_hs = ordered_minmax_to_polyhedral(bbox_dict[i]["top_hs"])#minmax_to_polyhedral(bbox_dict[i]["top_hs"])
         btm_hs = ordered_minmax_to_polyhedral(bbox_dict[i]["btm_hs"])
@@ -249,21 +239,5 @@ def extract_QSRs(reasoner, bbox_dict, search_radius=6,topological_rels=["St_Over
                         AND g1.object_id = %s AND g2.object_id != %s
                         ;""", (str(search_radius), i, i))
 
-        results = [(r[0], list(r[1:])) for r in reasoner.cursor.fetchall()]  # [i for i in reasoner.cursor.fetchall()]
+        return [(str(r[0]), list(r[1:])) for r in reasoner.cursor.fetchall()]  # [i for i in reasoner.cursor.fetchall()]
 
-        #TODO express QSRs as a graph and set rules for inverse relations
-        for n, ops in results:
-            if not semmap.has_edge(i, n):  # if object and neighbour not connected already
-                # avoiding duplicates and reducing computational cost
-                tgt_rels = [name for k, name in enumerate(topological_rels) if ops[k]]
-                # add edges between node pairs based on results
-                # True = edge, False = no edge
-                for index, name in enumerate(tgt_rels):
-                    semmap.add_edge(i, n)
-                    semmap.add_edge(n, i)  # topological ones are bidirectional
-                    semmap[i][n][index]["name"] = name
-                    if name == "ST_Within":
-                        semmap[n][i][index]["name"] = "ST_Contains"  # contains is inverse of within
-                    else:
-                        semmap[n][i][index]["name"] = name
-    return semmap

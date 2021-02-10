@@ -23,13 +23,12 @@ backhs = minmax2box([4,0,0],[16,5,3], color=(1.,0.,0.)) #red
 fronths = minmax2box([-12,0,0],[0,5,3], color=(0.,1.,0.)) #green
 lhs = minmax2box([0,5,0],[4,20,3], color=(0.,1.,1.)) #acquamarine
 rhs = minmax2box([0,-15,0],[4,0,3], color=(1.,0.,1.)) #fucsia
-#box2 = minmax2box([1,7,1],[4,10,8]) #green
-
-#box3 = minmax2box([-5,-5,2],[-4,-4,3], color=(1.,0.,0.)) #red
+box2 = minmax2box([1,7,1],[4,10,8], color=(0.,1.,0.)) #green
+box3 = minmax2box([-5,-5,2],[-4,-4,3], color=(1.,0.,0.)) #red
 
 mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame() # setup coord frame. red = x, green = y, blue = z
-#o3d.visualization.draw_geometries([box1,box2,box3,mesh_frame]) #visualize results
-o3d.visualization.draw_geometries([box1,lhs, rhs, mesh_frame])#tophs,btmhs,rhs,lhs,fronths, mesh_frame]) #visualize results
+o3d.visualization.draw_geometries([box1,box2,box3,mesh_frame]) #visualize results
+#o3d.visualization.draw_geometries([box1,lhs, rhs, mesh_frame])#tophs,btmhs,rhs,lhs,fronths, mesh_frame]) #visualize results
 
 
 
