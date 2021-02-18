@@ -18,7 +18,7 @@ def connect_DB(user,dbname):
 
     except (Exception,Error) as error:
         print("Error while connecting to PostgreSQL", error)
-        conn = None
+        conn, cur = None, None
     return conn,cur
 
 
@@ -26,7 +26,6 @@ def disconnect_DB(connection,cursor):
     cursor.close()
     connection.close()
     print("Closed PostgreSQL connection")
-
 
 def create_VG_table(cursor):
     cursor.execute(
@@ -37,10 +36,6 @@ def create_VG_table(cursor):
         "subject_polygon geometry,"
         "object_top_projection geometry);")
 
-        #"ST_Overlaps boolean,"
-        #"ST_Touches boolean,"
-        #"ST_Within boolean,"
-        #"ST_Contains boolean);")
     print("DB table VG_RELATIONS created or exists already")
 
 
@@ -71,23 +66,6 @@ def compute_spatial_op(cursor, current_row_id):
                                     WHERE relation_id=%s;""", (current_row_id,))
     touches = cursor.fetchone()[0]
 
-    """
-    cursor.execute(\"""
-                    UPDATE VG_RELATIONS
-                    SET ST_Within =
-                    (SELECT ST_Within(subject_polygon, object_top_projection)
-                                        FROM VG_RELATIONS
-                                        WHERE relation_id=%s)
-                    WHERE relation_id=%s;\""", (current_row_id, current_row_id))
-    within = cursor.fetchone()[0]
-    cursor.execute(\"""
-                    UPDATE VG_RELATIONS
-                    SET ST_Contains =
-                    (SELECT ST_Contains(subject_polygon, object_top_projection)
-                                        FROM VG_RELATIONS
-                                        WHERE relation_id=%s)
-                    WHERE relation_id=%s;\""", (current_row_id, current_row_id))
-    contains = cursor.fetchone()[0]"""
     return overlaps, touches
 
 def coords2polygon(coord_list):

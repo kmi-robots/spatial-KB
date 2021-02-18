@@ -1,6 +1,7 @@
 """KB class"""
 import os
 import time
+import requests
 
 #from onto import init_onto
 from PostGIS import *
@@ -103,3 +104,8 @@ class KnowledgeBase():
             json.dump(VG_stats,fout)
         print("Data preparation complete... took %f seconds" % (time.time() - start))
         return VG_stats
+
+    def query_conceptnet_web(self,term1,term2,base='/c/en/'):
+        node = requests.get('http://api.conceptnet.io/relatedness?node1=' + \
+                                base + term1 + '&node2=' + base + term2).json()
+        return node['value']

@@ -20,13 +20,33 @@ class ObjectReasoner():
         if self.connection is not None:
             # Load knowledge base
             self.KB = self.KB.load_data(self)
-
             # Query semantic map for QSR
-            self.localQSR,self.globalQSR = self.query_map()
+            extracted_bboxes = self.query_map()
 
-            # TODO Validate and correct based on KB relations
+            # Initialise QSR graph
+            self.globalQSR = nx.MultiDiGraph()
+            self.globalQSR.add_nodes_from(extracted_bboxes.keys())  # add one node per object_id
 
-            # TODO Update spatial DB with new predictions
+            # For each 3D object in map (optional: meeting some selection criteria)
+            # Find nearby 3D objects and their min 3D bounding box
+            for object_id in extracted_bboxes:
+                query_results = query_map_neighbours(self, extracted_bboxes, object_id)
+                self.globalQSR = self.update_QSR_graph(query_results, object_id, self.globalQSR)
+                # local graph including only neighbours
+                neighbours = [id_ for id_, res in query_results]
+                neighbours.extend(object_id)
+                localQSR = self.globalQSR.subgraph(neighbours)
+                # plot_graph(localQSR)
+                # TODO Validate QSRs in local graph based on KB relations
+                # Start from VG
+
+                # Query statistics from previous runs in KMi
+
+                # also ConceptNet call for semantics
+
+                # TODO Update spatial DB with new predictions
+
+            # plot_graph(globalQSR)
 
             # Commit all changes to DB
             self.connection.commit()
@@ -39,21 +59,8 @@ class ObjectReasoner():
 
         # Extrude 3D bboxes based on halfspace projection model
         extracted_bboxes = compute_hs_projections(extracted_bboxes)
+        return extracted_bboxes
 
-        #Initialise QSR graph
-        globalQSR = nx.MultiDiGraph()
-        globalQSR.add_nodes_from(extracted_bboxes.keys())  # add one node per object_id
-        #for v in globalQSR.nodes(): globalQSR.nodes[v]["name"] = "object_"+v
-        plot_graph(globalQSR)
-        # For each 3D object in map (optional: meeting some selection criteria)
-        # Find nearby 3D objects and their min 3D bounding box
-        for object_id in extracted_bboxes:
-            query_results = query_map_neighbours(self,extracted_bboxes,object_id)
-            globalQSR = self.update_QSR_graph(query_results,object_id,globalQSR)
-            # local graph including only neighbours
-            localQSR = globalQSR.subgraph([1,2,3])
-        plot_graph(globalQSR)
-        return localQSR,globalQSR
 
     def update_QSR_graph(self,results,i,globalg):
         # Express QSRs as a graph and set rules for inverse relations
@@ -78,24 +85,27 @@ class ObjectReasoner():
                         globalg.add_edge(i, n, QSR="Intersects", ext="TouchesOrOverlaps")
                         globalg.add_edge(n, i, QSR="Intersects", ext="TouchesOrOverlaps")
 
-                if ops[4] is True: #bottom hs of g1 intersects with g2
+                # bottom hs of g1 intersects with g2
+                if ops[4] is True:
 
                     if intersects is True: # with intersection, g1 is on
                         globalg.add_edge(i, n, QSR="IsOn")
                     else: # without intersection, it g1 is above
                         globalg.add_edge(i, n, QSR="IsAbove")
-                    #in both cases g2 is below
-                    globalg.add_edge(n, i,QSR="IsBelow")
+                    # in both cases g2 is below
+                    globalg.add_edge(n, i, QSR="IsBelow")
 
-                if ops[5] is True: # top hs of g1 intersects with g2
+                # top hs of g1 intersects with g2
+                if ops[5] is True:
                     if intersects is True: # with intersection, g2 is on
-                        globalg.add_edge(n, i,QSR="IsOn")
+                        globalg.add_edge(n, i, QSR="IsOn")
                     else: # without intersection, it g2 is above
-                        globalg.add_edge(n, i,QSR="IsAbove")
+                        globalg.add_edge(n, i, QSR="IsAbove")
                     #in both cases g1 is below
                     globalg.add_edge(i, n, QSR="IsBelow")
 
-                if any(ops[6:]) is True: #g1 next to g2 and viceversa, with front, back, l/r specialisations
+                # g1 next to g2 and viceversa, with front, back, l/r specialisations
+                if any(ops[6:]) is True:
 
                     if ops[6] is True: #left hs of g1 and g2
                         globalg.add_edge(i, n, QSR="IsNextTo", ext="IsRightOf")
@@ -112,7 +122,8 @@ class ObjectReasoner():
                         globalg.add_edge(i, n, QSR="IsNextTo", ext="IsInFrontOf")
                         globalg.add_edge(n, i, QSR="IsNextTo", ext="IsBehind")
 
-            if not globalg.has_edge(i, n):# by default, the object is a neighbour if in ops
+            # by default, the object is a neighbour if in ops
+            if not globalg.has_edge(i, n):
                 #fallback to near rel
                 globalg.add_edge(i, n, QSR="Near")
                 globalg.add_edge(n, i, QSR="Near")
