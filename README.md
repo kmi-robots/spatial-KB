@@ -1,4 +1,6 @@
 # spatial-KB
+Working implementation of the commonsense spatial reasoner presented in 
+[Chiatti et al., 2021](https://arxiv.org/abs/2104.00387).
 
 ## Dependencies
 * PostGRE with PostGIS and SFCGAL extensions  
