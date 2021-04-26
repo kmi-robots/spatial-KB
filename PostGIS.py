@@ -140,38 +140,54 @@ def minmax_to_vertex(minmax):
         [minmax[3], minmax[1], minmax[5]]
         ]
 
-def query_all_bboxes(reasoner):
+def create_boxes(reasoner, sf=2.0):
     # for all objects in spatial DB
-    # Find min 3D box bounding polyhedral surface (ST_3DExtent)
-    # and  extract bbox vertex coords
-    reasoner.cursor.execute("""SELECT object_id FROM test_map""")
-    all_ids = [str(i[0]) for i in reasoner.cursor.fetchall()]
 
-    box_coords ={}
-    for i in all_ids:
-        reasoner.cursor.execute("""
-            SELECT ST_XMin(g1), ST_YMin(g1), ST_ZMin(g1),
-            ST_XMax(g1), ST_YMax(g1), ST_ZMax(g1)
-            FROM (  SELECT ST_3DExtent(object_polyhedral_surface) as g1
-                    FROM test_map
-                    WHERE object_id = %s
-        ) as xyz;""", (i,))
-
-        minmax = reasoner.cursor.fetchall()[0]
-        box_vertices = minmax_to_vertex(minmax)
-        core_obj = ordered_minmax_to_polyhedral(minmax) #add ordered boundingbox polygon to table
-        reasoner.cursor.execute("""
-                    UPDATE test_map 
-                    SET bbox = ST_GeomFromText(%s)
-                    WHERE object_id=%s;""", (core_obj,i))
+    # Find min oriented 3D box bounding of polyhedral surface
+    reasoner.cursor.execute('SELECT object_id, ST_OrientedEnvelope(projection_2d), ST_ZMin(object_polyhedral_surface),'
+                   ' ST_ZMax(object_polyhedral_surface) FROM single_snap;')
+    query_res = [(str(r[0]), str(r[1]), float(r[2]), float(r[3])) for r in reasoner.cursor.fetchall()]
+    for id_, envelope, zmin, zmax in query_res:
+        height = zmax - zmin
+        # ST_Translate is needed here because the oriented envelope is projected on XY so we also need to translate
+        # everything up by the original height after extruding in this case
+        up1_mask = 'UPDATE single_snap SET bbox = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
+                   ' WHERE object_id = %s;'
+        reasoner.cursor.execute(up1_mask, (envelope, str(height), zmin, id_))
         reasoner.connection.commit()
-        box_coords[i] ={}
-        box_coords[i]["vertices"] = box_vertices
-        box_coords[i]["minmax"] = minmax
-        box_coords[i]["x_extent"] = minmax[3] - minmax[0]
-        box_coords[i]["y_extent"] = minmax[4] - minmax[1]
-        box_coords[i]["z_extent"] = minmax[5] - minmax[2]
-    return box_coords
+
+        # Derive CBB
+        reasoner.cursor.execute(
+            'SELECT ST_Angle(ST_MakeLine(ST_MakePoint(0, 0), ST_Centroid(ST_OrientedEnvelope(projection_2d))), '
+            'ST_MakeLine(ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 1), '
+            'ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2))) '
+            'FROM single_snap '
+            'WHERE object_id = \'' + id_ + '\';')
+
+        reasoner.connection.commit()
+
+        angle = reasoner.cursor.fetchone()[0]
+
+        up2_mask = 'UPDATE single_snap SET cbb = ST_Rotate(bbox, %s,' \
+                   ' ST_Centroid(ST_OrientedEnvelope(projection_2d)))' \
+                   ' WHERE object_id = %s;'
+        reasoner.cursor.execute(up2_mask, (str(angle), id_))
+        reasoner.connection.commit()
+
+        # Derive the six halfspaces, based on scaling factor sf
+
+        # top and bottom ones based on MinOriented, i.e., extruded again from oriented envelope
+        up_top = 'UPDATE single_snap SET  tophsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
+                   ' WHERE object_id = %s;'
+        reasoner.cursor.execute(up_top, (envelope, str(height*sf), zmax, id_))
+        up_btm = 'UPDATE single_snap SET  bottomhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
+                   ' WHERE object_id = %s;'
+        reasoner.cursor.execute(up_btm, (envelope, str(height * sf), zmin-height*sf, id_))
+
+        # L/R, front/back based on CBB
+
+
+        reasoner.connection.commit()
 
 
 def query_map_neighbours(reasoner, bbox_dict, i, search_radius=6):
@@ -185,7 +201,7 @@ def query_map_neighbours(reasoner, bbox_dict, i, search_radius=6):
 
         #Alter table to add halfspace projection data
         reasoner.cursor.execute("""
-            UPDATE test_map 
+            UPDATE semantic_map 
             SET bottomhsproj = ST_GeomFromText(%s),
                 tophsproj = ST_GeomFromText(%s),
                 lefthsproj = ST_GeomFromText(%s),
@@ -212,8 +228,8 @@ def query_map_neighbours(reasoner, bbox_dict, i, search_radius=6):
                         ST_3DIntersects(g1.righthsproj,g2.bbox),
                         ST_3DIntersects(g1.fronthsproj,g2.bbox), 
                         ST_3DIntersects(g1.backhsproj,g2.bbox)
-                        FROM test_map AS g1, test_map AS g2
-                        WHERE ST_3DDWithin(g1.object_polyhedral_surface, g2.object_polyhedral_surface, %s)
+                        FROM semantic_map AS g1, semantic_map AS g2
+                        WHERE ST_3DDWithin(g\s1.object_polyhedral_surface, g2.object_polyhedral_surface, %s)
                         AND g1.object_id = %s AND g2.object_id != %s
                         ;""", (str(search_radius), i, i))
 

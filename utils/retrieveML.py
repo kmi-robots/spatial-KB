@@ -44,9 +44,9 @@ def main():
             gt_label = remapper[gt_labels[i]]
 
             cur.execute("""
-                        UPDATE test_map
-                        SET ml_prediction = %s,
-                        ml_score = %s,
+                        UPDATE semantic_map
+                        SET ML_prediction = %s,
+                        ML_score = %s,
                         gt_label = %s,
                         top5_labels = %s,
                         top5_scores = %s

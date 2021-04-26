@@ -4,7 +4,6 @@ Reasoner class
 import os
 import networkx as nx
 from PostGIS import *
-from halfspace import *
 from utils.graphs import plot_graph
 
 class ObjectReasoner():
@@ -19,9 +18,11 @@ class ObjectReasoner():
 
         if self.connection is not None:
             # Load knowledge base
-            self.KB = self.KB.load_data(self)
-            # Query semantic map for QSR
-            extracted_bboxes = self.query_map()
+            #self.KB = self.KB.load_data(self)
+
+            # Create 3D spatial abstractions for objects in map and update spatial table
+            create_boxes(self)
+            extracted_bboxes ={}
 
             # Initialise QSR graph
             self.globalQSR = nx.MultiDiGraph()
@@ -53,13 +54,6 @@ class ObjectReasoner():
             # Close connection, to avoid db issues
             disconnect_DB(self.connection, self.cursor)
 
-    def query_map(self):
-        #extract all min 3D booxes for all polyhedrons in spatial DB
-        extracted_bboxes = query_all_bboxes(self)
-
-        # Extrude 3D bboxes based on halfspace projection model
-        extracted_bboxes = compute_hs_projections(extracted_bboxes)
-        return extracted_bboxes
 
 
     def update_QSR_graph(self,results,i,globalg):

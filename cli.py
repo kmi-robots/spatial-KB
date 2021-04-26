@@ -9,8 +9,7 @@ from object_reasoner import ObjectReasoner
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--path_to_data', help='Base path to raw spatial data', default='./data')
-    parser.add_argument('--IRI', help='Reference ontology IRI', default='./data/ont/spatial-onto.owl')
-    parser.add_argument('--dbname', help='Name for PostGRE SQL spatial database', default='VG_spatial')
+    parser.add_argument('--dbname', help='Name for PostGRE SQL spatial database', default='gis_database')
     args = parser.parse_args()
     KB = KnowledgeBase(args)
     reasoner = ObjectReasoner(KB, args)

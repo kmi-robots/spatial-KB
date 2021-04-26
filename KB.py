@@ -10,7 +10,6 @@ from VG import *
 
 class KnowledgeBase():
     def __init__(self, args):
-        #self.ontology = init_onto(args.IRI)
         # Load raw external KB data
         self.path_to_VGrel = os.path.join(args.path_to_data, 'relationships.json')
         self.path_to_VGstats = os.path.join(args.path_to_data, 'VG_spatial_stats.json')
@@ -52,13 +51,12 @@ class KnowledgeBase():
                     if pred in alias_set:
                         aliases = alias_set
                         break
-                intersection = list(set(aliases) & set(self.predicate_set))
+                #intersection = list(set(aliases) & set(self.predicate_set))
                 sub_syn = rel['subject']['synsets']
                 obj_syn = rel['object']['synsets']
 
-                if len(intersection) == 0 or len(sub_syn) != 1 or len(obj_syn) != 1 or pred == '' or pred == ' ':
-                    # Filtering out:
-                    # (i) relations with predicates and aliases outside SpatialSense predicate set
+                if len(sub_syn) != 1 or len(obj_syn) != 1 or pred == '' or pred == ' ':
+                    # Skipping:
                     # (ii) relations without both sub and object synsets
                     # (iii) compound periods, i.e., more than one synset per entity
                     # e.g.  subject: green trees seen  pred: green trees by road object: trees on roadside.)
@@ -66,7 +64,50 @@ class KnowledgeBase():
                     # (iv) as well as empty predicates
                     continue
 
-                # Disambiguate ON from ON FRONT OF based on postgis operators on 2D bboxes
+                #Below/Under
+                if pred in alias_index["under"]:
+                    # update VG predicate statistics
+                    VG_stats = update_VG_stats(VG_stats, "belowOf", aliases, alias_index, sub_syn, obj_syn)
+
+                if "above" in pred:
+                    VG_stats = update_VG_stats(VG_stats, "aboveOf", aliases, alias_index, sub_syn, obj_syn)
+
+                elif "right of" in pred:
+                    VG_stats = update_VG_stats(VG_stats, "rightOf", aliases, alias_index, sub_syn, obj_syn)
+                    # union of right and left also counts as beside
+                    VG_stats = update_VG_stats(VG_stats, "beside", aliases, alias_index, sub_syn, obj_syn)
+
+                elif "left of" in pred:
+                    VG_stats = update_VG_stats(VG_stats, "leftOf", aliases, alias_index, sub_syn, obj_syn)
+                    # union of right and left also counts as beside
+                    VG_stats = update_VG_stats(VG_stats, "beside", aliases, alias_index, sub_syn, obj_syn)
+
+                elif "in front" in pred:
+                    VG_stats = update_VG_stats(VG_stats, "inFrontOf", aliases, alias_index, sub_syn, obj_syn)
+
+                elif pred in alias_index["behind"]:
+                    VG_stats = update_VG_stats(VG_stats, "behindOf", aliases, alias_index, sub_syn, obj_syn)
+
+                elif "near" in pred or 'at' in pred:
+                    VG_stats = update_VG_stats(VG_stats, "near", aliases, alias_index, sub_syn, obj_syn)
+
+                elif "beside" in pred or 'next to' in pred or 'by' in pred:
+                    VG_stats = update_VG_stats(VG_stats, "beside", aliases, alias_index, sub_syn, obj_syn)
+
+                elif "on top of" in pred:
+                    VG_stats = update_VG_stats(VG_stats, "onTopOf", aliases, alias_index, sub_syn, obj_syn)
+
+                elif 'inside' in pred:
+                    VG_stats = update_VG_stats(VG_stats, "insideOf", aliases, alias_index, sub_syn, obj_syn)
+
+                if 'on' in pred: #TODO handle cases and consider that on may have already appeared above too
+                    if 'top' in pred:
+                        VG_stats = update_VG_stats(VG_stats, "onTopOf", aliases, alias_index, sub_syn, obj_syn)
+
+                if 'in' in pred: #TODO handle cases and consider that on may have already appeared above too
+                    continue
+
+                # Disambiguate ON uses based on postgis operators on 2D bboxes
                 if pred in alias_index["on"]:
                     # 1. Populate spatial DB #
                     rel_id = rel['relationship_id'] #to use as primary key
@@ -96,6 +137,8 @@ class KnowledgeBase():
                     if not (overlaps or touches):
                         pred = 'near' # generalises to "near" because not strictly "on"
 
+                if pred in alias_index["in"]:
+                    continue
                 # 2. update VG predicate statistics
                 VG_stats = update_VG_stats(VG_stats, pred, aliases,alias_index,sub_syn, obj_syn)
 

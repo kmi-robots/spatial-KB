@@ -28,8 +28,8 @@ def update_VG_stats(stats_dict,pred,aliases,alias_index, sub_syn, obj_syn):
 
     stats_dict = add_relation_counts(stats_dict,pred,aliases, sub_syn, obj_syn)
     # Repeat all of the above for the case of near, i.e., all predicates generalise back to near
-    if pred not in alias_index['near']:
-        stats_dict = add_relation_counts(stats_dict, "near", alias_index["near"], sub_syn, obj_syn)
+    #if pred not in alias_index['near']:
+    #    stats_dict = add_relation_counts(stats_dict, "near", alias_index["near"], sub_syn, obj_syn)
     return stats_dict
 
 
@@ -38,7 +38,7 @@ def add_relation_counts(stats_dict,pred,aliases, sub_syn, obj_syn):
     if pred not in stats_dict["predicates"]:
         stats_dict["predicates"][pred] = {}
         stats_dict["predicates"][pred]["relations"] = Counter()
-        stats_dict["predicates"][pred]["aliases"] = aliases
+        #stats_dict["predicates"][pred]["aliases"] = aliases
     stats_dict["predicates"][pred]["relations"][str((str(sub_syn[0]), str(obj_syn[0])))] += 1
 
     # how many times subject in relationship of type pred?
