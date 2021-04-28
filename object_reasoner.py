@@ -4,7 +4,6 @@ Reasoner class
 import os
 import networkx as nx
 from PostGIS import *
-from utils.graphs import plot_graph
 
 class ObjectReasoner():
     def __init__(self, KBobj, args):
@@ -22,7 +21,7 @@ class ObjectReasoner():
 
             # Create 3D spatial abstractions for objects in map and update spatial table
             create_boxes(self)
-            extracted_bboxes ={}
+            extracted_bboxes = {}
 
             # Initialise QSR graph
             self.globalQSR = nx.MultiDiGraph()
@@ -39,11 +38,8 @@ class ObjectReasoner():
                 localQSR = self.globalQSR.subgraph(neighbours)
                 # plot_graph(localQSR)
                 # TODO Validate QSRs in local graph based on KB relations
-                # Start from VG
+                # Start from querying VG for QSRs
 
-                # Query statistics from previous runs in KMi
-
-                # also ConceptNet call for semantics
 
                 # TODO Update spatial DB with new predictions
 

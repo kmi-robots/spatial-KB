@@ -156,6 +156,7 @@ def create_boxes(reasoner, sf=2.0):
         reasoner.cursor.execute(up1_mask, (envelope, str(height), zmin, id_))
         reasoner.connection.commit()
 
+        # TODO replace 0,0 below with robot XY read from a table
         # Derive CBB
         reasoner.cursor.execute(
             'SELECT ST_Angle(ST_MakeLine(ST_MakePoint(0, 0), ST_Centroid(ST_OrientedEnvelope(projection_2d))), '
@@ -184,8 +185,40 @@ def create_boxes(reasoner, sf=2.0):
                    ' WHERE object_id = %s;'
         reasoner.cursor.execute(up_btm, (envelope, str(height * sf), zmin-height*sf, id_))
 
-        # L/R, front/back based on CBB
+        # TODO L/R, front/back based on CBB
+        # Identify the base of the CBB, i.e., oriented envelope of points with z=zmin
+        # Define 4 rectangles from the base  and extrude
+        q_hs = 'SELECT ST_TransScale(base,ST_Xmin(base),ST_Ymin(base),%s,%s) as r1,' \
+               'ST_TransScale(base,ST_Xmin(base),ST_Ymin(base),%s,%s) as r2,'\
+               'ST_TransScale(base,ST_Xmin(base),ST_Ymin(base),%s,%s) as r3,'  \
+               'ST_TransScale(base,ST_Xmin(base),ST_Ymin(base),%s,%s) as r4' \
+                'FROM(SELECT ST_OrientedEnvelope(ST_Collect((dbox).geom)) as base'\ 
+	            '    FROM(	SELECT ST_DumpPoints(Box3D(cbb)) as dbox, ST_ZMin(Box3D(cbb)) as zmin'\
+		        '                FROM single_snap'\
+		        '                WHERE object_id=%s) as dt'\
+                'WHERE ST_Z((dbox).geom) = zmin) as bext'
 
+        """SELECT
+        ST_Union(base, ST_Union((St_Dump(r1)).geom, (St_Dump(r2)).geom))
+        FROM(SELECT
+        base, St_Difference(St_Expand(base, 2 * w, 0), base) as r1,
+                                                                St_Difference(St_Expand(base, 0, 2 * d), base) as r2
+        FROM(SELECT
+        base, St_XMax(base) - St_XMin(base) as w, St_YMax(base) - St_YMin(base) as d
+        FROM(SELECT
+        St_OrientedEnvelope(St_Collect((dbox).geom)) as base
+        FROM(SELECT
+        St_ZMax(cbb) - St_ZMin(cbb) as h, St_DumpPoints(cbb) as dbox, St_ZMin(cbb) as zmin
+        FROM
+        single_snap
+        WHERE
+        object_key = '1') as dt
+        WHERE
+        St_Z((dbox).geom) = zmin) as bext
+        ) as delta) as unions """
+
+        reasoner.cursor.execute(q_hs, (str(sf),str(sf), id_))
+        # Then interpret what is L/R/front/back among those boxes
 
         reasoner.connection.commit()
 
