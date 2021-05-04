@@ -181,44 +181,39 @@ def create_boxes(reasoner, sf=2.0):
         up_top = 'UPDATE single_snap SET  tophsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
                    ' WHERE object_id = %s;'
         reasoner.cursor.execute(up_top, (envelope, str(height*sf), zmax, id_))
+
         up_btm = 'UPDATE single_snap SET  bottomhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
                    ' WHERE object_id = %s;'
         reasoner.cursor.execute(up_btm, (envelope, str(height * sf), zmin-height*sf, id_))
 
-        # TODO L/R, front/back based on CBB
         # Identify the base of the CBB, i.e., oriented envelope of points with z=zmin
-        # Define 4 rectangles from the base  and extrude
-        q_hs = 'SELECT ST_TransScale(base,ST_Xmin(base),ST_Ymin(base),%s,%s) as r1,' \
-               'ST_TransScale(base,ST_Xmin(base),ST_Ymin(base),%s,%s) as r2,'\
-               'ST_TransScale(base,ST_Xmin(base),ST_Ymin(base),%s,%s) as r3,'  \
-               'ST_TransScale(base,ST_Xmin(base),ST_Ymin(base),%s,%s) as r4' \
-                'FROM(SELECT ST_OrientedEnvelope(ST_Collect((dbox).geom)) as base'\ 
-	            '    FROM(	SELECT ST_DumpPoints(Box3D(cbb)) as dbox, ST_ZMin(Box3D(cbb)) as zmin'\
-		        '                FROM single_snap'\
-		        '                WHERE object_id=%s) as dt'\
-                'WHERE ST_Z((dbox).geom) = zmin) as bext'
-
-        """SELECT
-        ST_Union(base, ST_Union((St_Dump(r1)).geom, (St_Dump(r2)).geom))
-        FROM(SELECT
-        base, St_Difference(St_Expand(base, 2 * w, 0), base) as r1,
-                                                                St_Difference(St_Expand(base, 0, 2 * d), base) as r2
-        FROM(SELECT
-        base, St_XMax(base) - St_XMin(base) as w, St_YMax(base) - St_YMin(base) as d
-        FROM(SELECT
-        St_OrientedEnvelope(St_Collect((dbox).geom)) as base
-        FROM(SELECT
-        St_ZMax(cbb) - St_ZMin(cbb) as h, St_DumpPoints(cbb) as dbox, St_ZMin(cbb) as zmin
-        FROM
-        single_snap
-        WHERE
-        object_key = '1') as dt
-        WHERE
-        St_Z((dbox).geom) = zmin) as bext
-        ) as delta) as unions """
+        # Define 4 rectangles from the base and expand 2D
+        q_hs = 'SELECT St_Rotate(hs1, alpha, St_centroid(aligned_base)), St_Rotate(hs2, alpha, St_centroid(aligned_base)), base ' \
+                'FROM('\
+                    'SELECT (St_Dump(r1)).geom as hs1, (St_Dump(r2)).geom as hs2, alpha, aligned_base, base, w, d '\
+                    'FROM('\
+                    'SELECT alpha, aligned_base, base, w, d, St_Difference(St_Expand(aligned_base, %s * w, 0),'\
+                        'St_Scale(aligned_base, St_MakePoint(1.00001,1.00001), St_Centroid(aligned_base))) as r1,'\
+                        'St_Difference(St_Expand(aligned_base, 0, %s * d), St_Scale(aligned_base,'\
+                        'St_MakePoint(1.00001,1.00001), St_Centroid(aligned_base))) as r2 '\
+                        'FROM( SELECT St_Rotate(base,-alpha, ST_Centroid(base)) as aligned_base, w, d, alpha, base '\
+                        'FROM( SELECT base, St_XMax(base) - St_XMin(base) as w, St_YMax(base) - St_YMin(base) as d,'\
+                        'St_Angle(St_MakeLine(ST_PointN(ST_ExteriorRing(base),1), ST_PointN(ST_ExteriorRing(base),2)),'\
+		                'St_MakeLine(ST_MakePoint(0,0), ST_MakePoint(0,1))) as alpha '\
+		                'FROM ( SELECT ST_OrientedEnvelope(St_Collect((dbox).geom)) as base '\
+	  					'FROM( SELECT St_ZMax(cbb)- St_ZMin(cbb) as h, St_DumpPoints(cbb) as dbox,'\
+                                'St_ZMin(cbb) as zmin FROM single_snap '\
+		    					'WHERE object_id=%s) as dt '\
+	                            'WHERE St_Z((dbox).geom) = zmin)   as basal'\
+                        ') as angles'\
+                        ') as aligned'\
+                        ') as hs'\
+                ')as fcheck'
 
         reasoner.cursor.execute(q_hs, (str(sf),str(sf), id_))
-        # Then interpret what is L/R/front/back among those boxes
+
+        # TODO interpret what is L/R/front/back among those boxes & extrude 3D
+        # TODO update table with halfspace columns
 
         reasoner.connection.commit()
 
