@@ -3,7 +3,6 @@ import os
 import time
 import requests
 
-#from onto import init_onto
 from PostGIS import *
 from VG import *
 

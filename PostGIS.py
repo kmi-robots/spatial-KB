@@ -76,42 +76,42 @@ def coords2polygon(coord_list):
     return "POLYGON(("+",".join(t for t in coords_)+"))"
 
 
-def create_boxes(reasoner, sf=2.0):
+def create_boxes(dbobj, sf=2.0):
     """Creation of min oriented bounding box, contextualised bounding box
     and six halfspaces, for each object/spatialRegion
     """
     # for all objects in spatial DB
     # Find min oriented 3D box bounding of polyhedral surface
-    reasoner.cursor.execute('SELECT object_id, ST_OrientedEnvelope(projection_2d), ST_ZMin(object_polyhedral_surface),'
+    dbobj.cursor.execute('SELECT object_id, ST_OrientedEnvelope(projection_2d), ST_ZMin(object_polyhedral_surface),'
                    ' ST_ZMax(object_polyhedral_surface) FROM single_snap;')
-    query_res = [(str(r[0]), str(r[1]), float(r[2]), float(r[3])) for r in reasoner.cursor.fetchall()]
+    query_res = [(str(r[0]), str(r[1]), float(r[2]), float(r[3])) for r in dbobj.cursor.fetchall()]
     for id_, envelope, zmin, zmax in query_res:
         height = zmax - zmin
         # ST_Translate is needed here because the oriented envelope is projected on XY so we also need to translate
         # everything up by the original height after extruding in this case
         up1_mask = 'UPDATE single_snap SET bbox = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
                    ' WHERE object_id = %s;'
-        reasoner.cursor.execute(up1_mask, (envelope, str(height), zmin, id_))
-        reasoner.connection.commit()
+        dbobj.cursor.execute(up1_mask, (envelope, str(height), zmin, id_))
+        dbobj.connection.commit()
 
         # TODO replace 0,0 below with robot XY read from a table
         # Derive CBB
-        reasoner.cursor.execute(
+        dbobj.cursor.execute(
             'SELECT ST_Angle(ST_MakeLine(ST_MakePoint(0, 0), ST_Centroid(ST_OrientedEnvelope(projection_2d))), '
             'ST_MakeLine(ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 1), '
             'ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2))) '
             'FROM single_snap '
             'WHERE object_id = \'' + id_ + '\';')
 
-        reasoner.connection.commit()
+        dbobj.connection.commit()
 
-        angle = reasoner.cursor.fetchone()[0]
+        angle = dbobj.cursor.fetchone()[0]
 
         up2_mask = 'UPDATE single_snap SET cbb = ST_Rotate(bbox, %s,' \
                    ' ST_Centroid(ST_OrientedEnvelope(projection_2d)))' \
                    ' WHERE object_id = %s;'
-        reasoner.cursor.execute(up2_mask, (str(angle), id_))
-        reasoner.connection.commit()
+        dbobj.cursor.execute(up2_mask, (str(angle), id_))
+        dbobj.connection.commit()
 
         # Derive the six halfspaces, based on scaling factor sf
 
@@ -119,7 +119,7 @@ def create_boxes(reasoner, sf=2.0):
         up_topbtm = 'UPDATE single_snap SET  tophsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),'\
                     ' bottomhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)'\
                    ' WHERE object_id = %s;'
-        reasoner.cursor.execute(up_topbtm, (envelope, str(height*sf), zmax, envelope, str(height * sf), zmin-height*sf, id_))
+        dbobj.cursor.execute(up_topbtm, (envelope, str(height*sf), zmax, envelope, str(height * sf), zmin-height*sf, id_))
 
         # Identify the base of the CBB, i.e., oriented envelope of points with z=zmin
         # Define 4 rectangles from the base and expand 2D
@@ -146,8 +146,8 @@ def create_boxes(reasoner, sf=2.0):
                         ') as hs'\
                 ')as fcheck'
 
-        reasoner.cursor.execute(q_hs, (str(sf),str(sf), id_))
-        q_res = reasoner.cursor.fetchall() # for each object, 2 rows by 3 colums (i.e., 4 halfspaces + base of cbb repeated twice)
+        dbobj.cursor.execute(q_hs, (str(sf),str(sf), id_))
+        q_res = dbobj.cursor.fetchall() # for each object, 2 rows by 3 colums (i.e., 4 halfspaces + base of cbb repeated twice)
 
         # Interpret what is L/R/front/back among those boxes
         # TODO replace 0,0 below with robot XY read from a table
@@ -158,15 +158,15 @@ def create_boxes(reasoner, sf=2.0):
         for lr, fb, base in q_res:
             # front is the nearest one to robot position
             qdis = 'SELECT St_Distance(St_MakePoint(0,0), St_Centroid(St_GeomFromEWKT(%s)))'
-            reasoner.cursor.execute(qdis, (fb,))
-            qdisr = reasoner.cursor.fetchone()[0]
+            dbobj.cursor.execute(qdis, (fb,))
+            qdisr = dbobj.cursor.fetchone()[0]
             if qdisr < dmin:
                 fronths = fb
             # Left one has the biggest angle with robot position and base centroid (St_Angle is computed clockwise)
             qang = 'SELECT St_Angle(St_MakeLine(St_MakePoint(0,0),St_Centroid(%s)), St_MakeLine(St_MakePoint(0,0)'\
                         ',St_Centroid(St_GeomFromEWKT(%s))))'
-            reasoner.cursor.execute(qang, (base,lr))
-            qangr = reasoner.cursor.fetchone()[0]
+            dbobj.cursor.execute(qang, (base,lr))
+            qangr = dbobj.cursor.fetchone()[0]
             if qangr > amax:
                 lefths = lr
         backhs = [fb for fb in allfbs if fb!= fronths][0] # the one record which is not the front one will be the back one
@@ -177,22 +177,22 @@ def create_boxes(reasoner, sf=2.0):
                     ' fronthsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),' \
                     ' backhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
                     ' WHERE object_id = %s;'
-        reasoner.cursor.execute(up_others,
+        dbobj.cursor.execute(up_others,
                                 (lefths, str(height * sf), zmin, righths, str(height * sf), zmin,
                                  fronths,str(height * sf), zmin, backhs,str(height * sf), zmin, id_))
-        reasoner.connection.commit()
+        dbobj.connection.commit()
     """Just for debugging/ visualize the 3D geometries we have just constructed"""
     # return XML representation for 3D web visualizer
-    """reasoner.cursor.execute('SELECT ST_AsX3D(bbox), ST_AsX3D(cbb), ST_AsX3D(tophsproj)  FROM single_snap;')
+    """dbobj.cursor.execute('SELECT ST_AsX3D(bbox), ST_AsX3D(cbb), ST_AsX3D(tophsproj)  FROM single_snap;')
     with open(os.path.join(os.environ['HOME'], 'hsdump.txt'), 'w') as outd:
-        for r in reasoner.cursor.fetchall():
+        for r in dbobj.cursor.fetchall():
             outd.write(r[0] + ',' + r[1] + r[2] + '\n')
     """
 
-def query_map_neighbours(reasoner, bbox_dict, i, search_radius=6):
+def query_map_neighbours(dbobj, bbox_dict, i, search_radius=6):
 
         # Find all nearby points within given radius and compute QSRs
-        reasoner.cursor.execute("""
+        dbobj.cursor.execute("""
                         SELECT g2.object_id, ST_3DIntersects(g1.bbox, g2.bbox),
                         ST_Volume(ST_MakeSolid(g1.bbox)), ST_Volume(ST_MakeSolid(g2.bbox)), 
                         ST_Volume(ST_MakeSolid(ST_3DIntersection(g1.bbox, g2.bbox))),
@@ -207,5 +207,5 @@ def query_map_neighbours(reasoner, bbox_dict, i, search_radius=6):
                         AND g1.object_id = %s AND g2.object_id != %s
                         ;""", (str(search_radius), i, i))
 
-        return [(str(r[0]), list(r[1:])) for r in reasoner.cursor.fetchall()]  # [i for i in reasoner.cursor.fetchall()]
+        return [(str(r[0]), list(r[1:])) for r in dbobj.cursor.fetchall()]  # [i for i in dbobj.cursor.fetchall()]
 
