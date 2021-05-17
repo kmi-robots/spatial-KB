@@ -34,6 +34,7 @@ def main():
     args = parser.parse_args()
 
     overall_res = {m: {} for m in ['MLonly', 'spatial_VG']} # dictionary of ablations under test
+    overall_res['spatial_VG']['processingTime'] = []
     KB = KnowledgeBase(args)
     spatialDB = SpatialDB(KB, args)
     spatialDB.db_session()

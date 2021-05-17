@@ -1,11 +1,15 @@
 """
 Reasoner class
+
+where knowledge-based correction of the ML predictions is applied
 """
 
 import numpy as np
 import json
 import os
+import time
 from evalscript import eval_singlemodel
+
 
 class ObjectReasoner():
     def __init__(self, args):
@@ -24,6 +28,14 @@ class ObjectReasoner():
         print("Evaluating ML baseline...")
         eval_dictionary = eval_singlemodel(self, eval_dictionary, 'MLonly')
         eval_dictionary = eval_singlemodel(self, eval_dictionary, 'MLonly', K=5)
+
+        print("Reasoning for correction ... ")
+        """Data stats and monitoring vars for debugging"""
+        start = time.time()
+
+        procTime = float(time.time() - start) # global proc time
+        print("Took % fseconds." % procTime)
+        eval_dictionary['spatial_VG']['processingTime'].append(procTime)
 
         return eval_dictionary
 
