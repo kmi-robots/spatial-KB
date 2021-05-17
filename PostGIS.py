@@ -142,7 +142,6 @@ def minmax_to_vertex(minmax):
 
 def create_boxes(reasoner, sf=2.0):
     # for all objects in spatial DB
-
     # Find min oriented 3D box bounding of polyhedral surface
     reasoner.cursor.execute('SELECT object_id, ST_OrientedEnvelope(projection_2d), ST_ZMin(object_polyhedral_surface),'
                    ' ST_ZMax(object_polyhedral_surface) FROM single_snap;')
@@ -178,19 +177,17 @@ def create_boxes(reasoner, sf=2.0):
         # Derive the six halfspaces, based on scaling factor sf
 
         # top and bottom ones based on MinOriented, i.e., extruded again from oriented envelope
-        up_top = 'UPDATE single_snap SET  tophsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
+        up_topbtm = 'UPDATE single_snap SET  tophsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),'\
+                    ' bottomhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)'\
                    ' WHERE object_id = %s;'
-        reasoner.cursor.execute(up_top, (envelope, str(height*sf), zmax, id_))
-
-        up_btm = 'UPDATE single_snap SET  bottomhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
-                   ' WHERE object_id = %s;'
-        reasoner.cursor.execute(up_btm, (envelope, str(height * sf), zmin-height*sf, id_))
+        reasoner.cursor.execute(up_topbtm, (envelope, str(height*sf), zmax, envelope, str(height * sf), zmin-height*sf, id_))
 
         # Identify the base of the CBB, i.e., oriented envelope of points with z=zmin
         # Define 4 rectangles from the base and expand 2D
-        q_hs = 'SELECT St_Rotate(hs1, alpha, St_centroid(aligned_base)), St_Rotate(hs2, alpha, St_centroid(aligned_base)), base ' \
+        # TODO replace 0,0 below with robot XY read from a table
+        q_hs = 'SELECT St_Rotate(hsX, alpha, St_centroid(aligned_base)), St_Rotate(hsY, alpha, St_centroid(aligned_base)), base '\
                 'FROM('\
-                    'SELECT (St_Dump(r1)).geom as hs1, (St_Dump(r2)).geom as hs2, alpha, aligned_base, base, w, d '\
+                    'SELECT (St_Dump(r1)).geom as hsX, (St_Dump(r2)).geom as hsY, alpha, aligned_base, base, w, d '\
                     'FROM('\
                     'SELECT alpha, aligned_base, base, w, d, St_Difference(St_Expand(aligned_base, %s * w, 0),'\
                         'St_Scale(aligned_base, St_MakePoint(1.00001,1.00001), St_Centroid(aligned_base))) as r1,'\
@@ -200,8 +197,8 @@ def create_boxes(reasoner, sf=2.0):
                         'FROM( SELECT base, St_XMax(base) - St_XMin(base) as w, St_YMax(base) - St_YMin(base) as d,'\
                         'St_Angle(St_MakeLine(ST_PointN(ST_ExteriorRing(base),1), ST_PointN(ST_ExteriorRing(base),2)),'\
 		                'St_MakeLine(ST_MakePoint(0,0), ST_MakePoint(0,1))) as alpha '\
-		                'FROM ( SELECT ST_OrientedEnvelope(St_Collect((dbox).geom)) as base '\
-	  					'FROM( SELECT St_ZMax(cbb)- St_ZMin(cbb) as h, St_DumpPoints(cbb) as dbox,'\
+		                'FROM (SELECT ST_OrientedEnvelope(St_Collect((dbox).geom)) as base '\
+	  					'FROM(SELECT St_ZMax(cbb)- St_ZMin(cbb) as h, St_DumpPoints(cbb) as dbox,'\
                                 'St_ZMin(cbb) as zmin FROM single_snap '\
 		    					'WHERE object_id=%s) as dt '\
 	                            'WHERE St_Z((dbox).geom) = zmin)   as basal'\
@@ -211,10 +208,39 @@ def create_boxes(reasoner, sf=2.0):
                 ')as fcheck'
 
         reasoner.cursor.execute(q_hs, (str(sf),str(sf), id_))
+        q_res = reasoner.cursor.fetchall() # for each object, 2 rows by 3 colums (i.e., 4 halfspaces + base of cbb repeated twice)
 
-        # TODO interpret what is L/R/front/back among those boxes & extrude 3D
-        # TODO update table with halfspace columns
-
+        # Interpret what is L/R/front/back among those boxes
+        # TODO replace 0,0 below with robot XY read from a table
+        dmin = float('inf')
+        amax = float('-inf')
+        allfbs = [q[1] for q in q_res]
+        alllrs = [q[0] for q in q_res]
+        for lr, fb, base in q_res:
+            # front is the nearest one to robot position
+            qdis = 'SELECT St_Distance(St_MakePoint(0,0), St_Centroid(St_GeomFromEWKT(%s)))'
+            reasoner.cursor.execute(qdis, (fb,))
+            qdisr = reasoner.cursor.fetchone()[0]
+            if qdisr < dmin:
+                fronths = fb
+            # Left one has the biggest angle with robot position and base centroid (St_Angle is computed clockwise)
+            qang = 'SELECT St_Angle(St_MakeLine(St_MakePoint(0,0),St_Centroid(%s)), St_MakeLine(St_MakePoint(0,0)'\
+                        ',St_Centroid(St_GeomFromEWKT(%s))))'
+            reasoner.cursor.execute(qang, (base,lr))
+            qangr = reasoner.cursor.fetchone()[0]
+            if qangr > amax:
+                lefths = lr
+        backhs = [fb for fb in allfbs if fb!= fronths][0] # the one record which is not the front one will be the back one
+        righths = [lr for lr in alllrs if lr!= lefths][0] # similarly for L/R
+        # Extrude + Translate 3D & update table with halfspace columns
+        up_others = 'UPDATE single_snap SET  lefthsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),' \
+                    ' righthsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),' \
+                    ' fronthsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),' \
+                    ' backhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
+                    ' WHERE object_id = %s;'
+        reasoner.cursor.execute(up_others,
+                                (lefths, str(height * sf), zmin, righths, str(height * sf), zmin,
+                                 fronths,str(height * sf), zmin, backhs,str(height * sf), zmin, id_))
         reasoner.connection.commit()
 
 
