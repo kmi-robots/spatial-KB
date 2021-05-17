@@ -20,7 +20,10 @@ class ObjectReasoner():
             #self.KB = self.KB.load_data(self)
 
             # Create 3D spatial abstractions for objects in map and update spatial table
-            create_boxes(self)
+            create_boxes(self) # done once for all objects
+
+
+            """ Older code
             extracted_bboxes = {}
 
             # Initialise QSR graph
@@ -44,7 +47,7 @@ class ObjectReasoner():
                 # TODO Update spatial DB with new predictions
 
             # plot_graph(globalQSR)
-
+            """
             # Commit all changes to DB
             self.connection.commit()
             # Close connection, to avoid db issues
