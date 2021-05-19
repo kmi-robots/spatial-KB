@@ -9,6 +9,7 @@ from sklearn.model_selection import StratifiedKFold
 import copy
 import os
 import json
+import time
 from crossval_sampling import *
 
 def main():
@@ -36,17 +37,21 @@ def main():
     overall_res = {m: {} for m in ['MLonly', 'spatial_VG']} # dictionary of ablations under test
     overall_res['spatial_VG']['processingTime'] = []
     KB = KnowledgeBase(args)
+
+    print("Init VG data and batch-compute 3D geometries for spatial DB.. ")
+    start = time.time()
     spatialDB = SpatialDB(KB, args)
     spatialDB.db_session()
-    reasoner = ObjectReasoner(args)
+    print("Took % fseconds." % float(time.time() - start))
 
+    reasoner = ObjectReasoner(args)
     # Nfold stratified cross-validation for test results
     # subsample test set to devote a small portion to param tuning
     skf = StratifiedKFold(n_splits=args.nsplits)
     allclasses = reasoner.mapper.values()
     for test1_index, test2_index in skf.split(reasoner.predictions, reasoner.labels):
         sampled_reasoner = subsample(copy.deepcopy(reasoner), test1_index, test2_index, allclasses)
-        overall_res = sampled_reasoner.run(overall_res)
+        overall_res = sampled_reasoner.run(overall_res,spatialDB)
 
     """Compute mean and stdev of eval results across test runs
      and output eval report as json file"""

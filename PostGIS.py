@@ -6,6 +6,7 @@ import itertools
 import psycopg2
 from psycopg2 import Error
 import keyring # used for more secure pw storage
+from collections import OrderedDict
 
 
 def connect_DB(user,dbname):
@@ -189,23 +190,111 @@ def create_boxes(dbobj, sf=2.0):
             outd.write(r[0] + ',' + r[1] + r[2] + '\n')
     """
 
-def query_map_neighbours(dbobj, bbox_dict, i, search_radius=6):
+def retrieve_ids_ord(session,timestamp):
+    timestamp = '2020-05-15-11-02-54_646' #TODO remove when running on full set
+    tmp_conn, tmp_cur = session
+    tmp_cur.execute('SELECT object_id, ST_Volume(bbox) as v FROM single_snap '\
+                    'WHERE object_id LIKE %s '\
+                    'ORDER BY v DESC', (timestamp+'%',)) #use string pattern matching to check only first part of ID
+    # & order objects by volume, descending, to identify reference objects
+    res = tmp_cur.fetchall()
+    return OrderedDict(res) #preserve ordering in dict #{k[0]: {} for k in res}  # init with obj ids
 
-        # Find all nearby points within given radius and compute QSRs
-        dbobj.cursor.execute("""
-                        SELECT g2.object_id, ST_3DIntersects(g1.bbox, g2.bbox),
-                        ST_Volume(ST_MakeSolid(g1.bbox)), ST_Volume(ST_MakeSolid(g2.bbox)), 
-                        ST_Volume(ST_MakeSolid(ST_3DIntersection(g1.bbox, g2.bbox))),
-                        ST_3DIntersects(g1.bottomhsproj,g2.bbox), 
-                        ST_3DIntersects(g1.tophsproj,g2.bbox),
-                        ST_3DIntersects(g1.lefthsproj,g2.bbox), 
-                        ST_3DIntersects(g1.righthsproj,g2.bbox),
-                        ST_3DIntersects(g1.fronthsproj,g2.bbox), 
-                        ST_3DIntersects(g1.backhsproj,g2.bbox)
-                        FROM semantic_map AS g1, semantic_map AS g2
-                        WHERE ST_3DDWithin(g\s1.object_polyhedral_surface, g2.object_polyhedral_surface, %s)
-                        AND g1.object_id = %s AND g2.object_id != %s
-                        ;""", (str(search_radius), i, i))
+def find_neighbours(session, ref_id, ordered_objs,T=2):
+    """T = distance threshold to find neighbours, defaults to 2 units in the SRID of spatial DB"""
+    #Find nearby objects which are also smaller in the ordering
+    i = list(ordered_objs.keys()).index(ref_id)
+    candidates = list(ordered_objs.keys())[i+1:] #candidate figure objects, i.e., smaller
+    # Which ones are also nearby?
+    tmp_conn, tmp_cur = session
+    tmp_cur.execute('SELECT object_id FROM single_snap'\
+                    ' WHERE ST_3DDWithin(bbox, '\
+                    '(SELECT bbox FROM single_snap '\
+                    'WHERE object_id = %s), %s) '\
+                    'AND object_id != %s', (ref_id,str(T),ref_id))
 
-        return [(str(r[0]), list(r[1:])) for r in dbobj.cursor.fetchall()]  # [i for i in dbobj.cursor.fetchall()]
+    nearby = [t[0] for t in tmp_cur.fetchall()]
+    figures = [id_ for id_ in nearby if id_ in candidates]
+    return figures
 
+def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.):
+    """
+    Expects qsrs to be collected as nx.MultiDGraph
+    D is the space granularity as defined in the paper"""
+    tmp_conn, tmp_cur = session
+    for figure_id in figure_objs:
+        if not qsr_graph.has_node(figure_id): #add new node if not already there
+            qsr_graph.add_node(figure_id)
+        #Use postGIS for deriving truth values of base operators
+        tmp_cur.execute('SELECT ST_3DDWithin(fig.bbox,reff.bbox, 0),'\
+		                ' ST_3DIntersects(fig.bbox,reff.bbox),'\
+                        ' ST_Volume(St_3DIntersection(fig.bbox,reff.bbox)),' \
+		                ' ST_Volume(fig.bbox),'\
+		                ' ST_3DIntersects(fig.bbox,reff.tophsproj),ST_3DIntersects(fig.bbox,reff.bottomhsproj),'\
+		                ' ST_3DIntersects(fig.bbox,reff.lefthsproj),ST_3DIntersects(fig.bbox,reff.righthsproj),'\
+		                ' ST_3DIntersects(fig.bbox,reff.fronthsproj), ST_3DIntersects(fig.bbox,reff.backhsproj),'\
+		                ' St_Volume(ST_3DIntersection(ST_Scale(ST_3DIntersection(fig.bbox,reff.bbox),1.00001,1.00001,1.00001), fig.bbox)),'\
+		                ' St_Volume(ST_3DIntersection(ST_Scale(ST_3DIntersection(fig.bbox,reff.bbox),1.00001,1.00001,1.00001), reff.bbox))'\
+                        ' from single_snap as reff, single_snap as fig'\
+                        ' WHERE reff.object_id = %s'\
+                        ' AND fig.object_id = %s', (ref_id,figure_id))
+        #Unpack results and infer QSR predicates
+        res = tmp_cur.fetchone()
+
+        # Relations are all directed from figure to reference
+        if res[0] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='touches')
+        if res[1] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='intersects')
+
+        if res[1] is True and (res[3]-res[2]) <= D: #if volume of intersection very close to volume of smaller object, smaller object is completely contained
+            qsr_graph.add_edge(figure_id, ref_id, QSR='completely_contained')
+        elif res[1] is True and (res[3]-res[2])> D and res[10]<res[11]: #intersect but only partially In
+            qsr_graph.add_edge(figure_id, ref_id, QSR='partially_contained')
+
+        if res[4] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='above')
+        if res[5] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='below')
+        if res[6] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='leftOf')
+        if res[7] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='rightOf')
+        if res[6] is True or res[7] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='beside')
+        if res[8] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='inFrontOf')
+        if res[9] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='behind')
+
+        #Infer more complex QSR by combining the base ones (e.g., touch and above --> on top of)
+        if res[0] is True and res[4] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='onTopOf')
+        # to test the other cases of ON (affixedOn and leanOn) we need all base QSRs with other objects gathered first
+
+        if not qsr_graph.has_edge(figure_id, ref_id): # If not special rel, by default/definition, they are neighbours
+            qsr_graph.add_edge(figure_id, ref_id, QSR='near')
+
+    return qsr_graph
+
+
+def infer_special_ON(global_graph, local_graph):
+    """Iterates only over QSRs in current image
+    but propagates new QSRs found to global graph"""
+    for node1 in local_graph.nodes():
+        # if obj1 touches or is touched by obj2
+        t = [(f,ref,r) for f,ref,r in local_graph.out_edges(node1, data=True) if r['QSR']=='touches']
+        is_t = [(f,ref,r) for f,ref,r in local_graph.in_edges(node1, data=True) if r['QSR']=='touches']
+        is_a = [f for f,_,r in local_graph.in_edges(node1, data=True) if r['QSR']=='below'] #edges where obj1 is reference and figure objects are below it
+
+        if len(t)==0 and len(is_t)==0: continue #skip
+        elif len(t)==1 and len(is_t)==0: #exactly one touch relation
+            #where obj1 is fig, obj2 is ref
+            node2 = t[0][1]
+            l = [k for k in local_graph.get_edge_data(node1,node2) if local_graph.get_edge_data(node1,node2,k)['QSR']=='above']
+            if len(l)==0: # obj1 is not above obj2
+                global_graph.add_edge(node1, node2, QSR='affixedOn') #then obj1 is affixed on obj2
+        elif len(t) ==0 and len(is_t)==1: continue # skip, will be added later when obj is found as fig in for loop
+        else: # touches/is touched by more than one object
+            #consider those where obj1 is figure
+            nodes2 = [tr[1] for tr in t]
+            for node2 in nodes2:
+                others_below = [n for n in is_a if n!=node2 and n in nodes2]
+                l = [k for k in local_graph.get_edge_data(node1, node2) if
+                     local_graph.get_edge_data(node1, node2, k)['QSR'] == 'above']
+                lb = [k for k in local_graph.get_edge_data(node1, node2) if
+                     local_graph.get_edge_data(node1, node2, k)['QSR'] == 'below']
+                if len(l)==0 and lb==0 \
+                        and len(others_below)>0: #and there is at least an o3 different from o2 which is below o1
+                    global_graph.add_edge(node1, node2, QSR='leansOn') # then o1 leans on o2
+    return global_graph
