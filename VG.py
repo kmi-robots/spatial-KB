@@ -4,11 +4,11 @@ from collections import OrderedDict,Counter
 
 
 def load_rel_bank(KBobj):
-    with open(KBobj.path_to_VGrel) as ind, open(KBobj.path_to_predicate_aliases) as aliasin:
-        alias_list = aliasin.read().splitlines()[:-1]  # last line is empty
+    with open(KBobj.path_to_VGrel) as ind: #, open(KBobj.path_to_predicate_aliases) as aliasin:
+        #alias_list = aliasin.read().splitlines()[:-1]  # last line is empty
         raw_data = json.load(ind)
 
-    alias_index = OrderedDict()
+    """alias_index = OrderedDict()
     for aline in alias_list:
         alist = aline.split(",")
         # also check for duplicate aliases which are not at first position in each line
@@ -19,21 +19,21 @@ def load_rel_bank(KBobj):
             k = list(alias_index.items())[match_index[0]][0]
             alias_index[k].extend(alist[1:])
         else:
-            alias_index[alist[0]] = alist
-    return raw_data,alias_index
+            alias_index[alist[0]] = alist"""
+    return raw_data #,alias_index
 
 
 
-def update_VG_stats(stats_dict,pred,aliases,alias_index, sub_syn, obj_syn):
+def update_VG_stats(stats_dict,pred,sub_syn, obj_syn):
 
-    stats_dict = add_relation_counts(stats_dict,pred,aliases, sub_syn, obj_syn)
+    stats_dict = add_relation_counts(stats_dict,pred,sub_syn, obj_syn)
     # Repeat all of the above for the case of near, i.e., all predicates generalise back to near
     #if pred not in alias_index['near']:
     #    stats_dict = add_relation_counts(stats_dict, "near", alias_index["near"], sub_syn, obj_syn)
     return stats_dict
 
 
-def add_relation_counts(stats_dict,pred,aliases, sub_syn, obj_syn):
+def add_relation_counts(stats_dict,pred,sub_syn, obj_syn):
     # How many times subj - pred - obj?
     if pred not in stats_dict["predicates"]:
         stats_dict["predicates"][pred] = {}

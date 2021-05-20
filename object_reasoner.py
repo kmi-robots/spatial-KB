@@ -63,7 +63,7 @@ class ObjectReasoner():
                 else: tbcorr = img_ids #validate all
 
                 # proceed with validation/correction based on spatial knowledge
-                self.space_validate(tbcorr, QSRs)
+                self.space_validate(tbcorr, QSRs,spatialDB)
                 #TODO integrate size correction as well,
                 # but this time dimensions are derived from postgis database
                 # and image-wise instead of crop by crop
@@ -79,7 +79,7 @@ class ObjectReasoner():
         eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial_VG', K=5)
         return eval_dictionary
 
-    def space_validate(self,obj_list,qsr_graph):
+    def space_validate(self,obj_list,qsr_graph,spatialDB):
         # To make correction independent from the order objects in each img are picked, we interpret QSRs based on original ML prediction and do not correct labels in the QSR
 
         for oid in obj_list: #for each object to correct/validate
@@ -94,3 +94,4 @@ class ObjectReasoner():
                         for f,ref,r in qsr_graph.in_edges(oid, data=True)] # rels where obj is reference
             #TODO use these to query VG stats
 
+            # loaded as spatialDB.KB

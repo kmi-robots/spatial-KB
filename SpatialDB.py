@@ -17,7 +17,7 @@ class SpatialDB():
 
         if self.connection is not None:
             # Load knowledge base
-            #self.KB = self.KB.load_data(self)
+            self.KB = self.KB.load_data(self)
             # Create 3D spatial abstractions for objects in map and update spatial table
             create_boxes(self) # done once for all objects
             # Commit all changes to DB
