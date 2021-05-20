@@ -268,7 +268,7 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.):
     return qsr_graph
 
 
-def infer_special_ON(global_graph, local_graph):
+def infer_special_ON(local_graph):
     """Iterates only over QSRs in current image
     but propagates new QSRs found to global graph"""
     for node1 in local_graph.nodes():
@@ -283,7 +283,7 @@ def infer_special_ON(global_graph, local_graph):
             node2 = t[0][1]
             l = [k for k in local_graph.get_edge_data(node1,node2) if local_graph.get_edge_data(node1,node2,k)['QSR']=='above']
             if len(l)==0: # obj1 is not above obj2
-                global_graph.add_edge(node1, node2, QSR='affixedOn') #then obj1 is affixed on obj2
+                local_graph.add_edge(node1, node2, QSR='affixedOn') #then obj1 is affixed on obj2
         elif len(t) ==0 and len(is_t)==1: continue # skip, will be added later when obj is found as fig in for loop
         else: # touches/is touched by more than one object
             #consider those where obj1 is figure
@@ -296,5 +296,5 @@ def infer_special_ON(global_graph, local_graph):
                      local_graph.get_edge_data(node1, node2, k)['QSR'] == 'below']
                 if len(l)==0 and lb==0 \
                         and len(others_below)>0: #and there is at least an o3 different from o2 which is below o1
-                    global_graph.add_edge(node1, node2, QSR='leansOn') # then o1 leans on o2
-    return global_graph
+                    local_graph.add_edge(node1, node2, QSR='leansOn') # then o1 leans on o2
+    return local_graph

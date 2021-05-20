@@ -36,10 +36,10 @@ class ObjectReasoner():
         start = time.time()
         tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname) #open spatial DB connection
         already_processed = []
-        QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
         for fname, pred_ranking, gt_label in list(zip(self.fnames, self.predictions, self.labels)):
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
+                QSRs = nx.MultiDiGraph() # graph is local to the img and thrown away afterwards to speed up # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
                 all_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
                 QSRs.add_nodes_from(all_ids.keys())
@@ -50,16 +50,11 @@ class ObjectReasoner():
                         QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
                 # after all references in image have been examined
                 # derive special cases of ON
-                img_QSRs = QSRs.subgraph(all_ids.keys())  # from global graph to local, i.e., only rel in that image
-                QSRs = infer_special_ON(QSRs, img_QSRs)
-
-            #Once all QSRs for one image have been extracted:
-            # Lookup QSRs which involve current object region
-            #TODO TBD, correct all crops in that image and indent the below? In that case we may skip global qsr graph
-            # and just keep a local one
-            # validate QSRs based on background knowledge
-            #TODO go from QSRs between ids to QSRs between object labels
-            #TODO handle/propose correction
+                QSRs = infer_special_ON(QSRs)
+                # also change/correct all ML predictions in that image
+                # To make correction order-independent, we interpret QSRs based on original ML prediction and do not correct labels in the QSR
+                # TODO go from QSRs between ids to QSRs between object labels
+                # TODO correct ML predictions based on QSRs
 
         disconnect_DB(tmp_conn, tmp_cur) #close spatial DB connection
         procTime = float(time.time() - start)  # global proc time
