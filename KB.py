@@ -49,13 +49,15 @@ class KnowledgeBase():
                 sub_syn = rel['subject']['synsets']
                 obj_syn = rel['object']['synsets']
 
-                if len(sub_syn) != 1 or len(obj_syn) != 1 or pred == '' or pred == ' ':
+                if len(sub_syn) != 1 or len(obj_syn) != 1 or pred == '' or pred == ' '\
+                        or pred =='of' or pred=='to':
                     # Skipping:
                     # (ii) relations without both sub and object synsets
                     # (iii) compound periods, i.e., more than one synset per entity
                     # e.g.  subject: green trees seen  pred: green trees by road object: trees on roadside.)
                     # e.g.  subject: see cupboard  pred: cupboard black object: cupboard not white. )
                     # (iv) as well as empty predicates
+                    # (v) "of" and "to" are too generic and match "next to" and "on top of" ambiguously
                     continue
 
                 # Find closest match between pred and target predicate set, if any
