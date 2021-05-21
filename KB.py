@@ -17,8 +17,6 @@ class KnowledgeBase():
                               ("next to","beside","adjacent", "on side of"),  ("under", "below"),
                               ("above",), ("near","by","around")] #predicate pool, with synonyms, needed to derive the commonsense predicates of (Landau & Jackendoff 1993)
                                                     # also adopted in our paper
-        #if predicate contains any of the above but not also any of the others
-
     def load_data(self,reasoner):
         # Same db session as reasoner
         self.cursor, self.connection = reasoner.cursor, reasoner.connection
@@ -60,18 +58,25 @@ class KnowledgeBase():
                     # (iv) as well as empty predicates
                     continue
 
-                # for predicates we need aliases (if any is found) because synsets can be unknown or too generic
-                # Find closest match between pred and predicate set, if any
-
-                hits = [p_ for p in self.predicate_set for p_ in p if search(pred,p_) is not None]
+                # Find closest match between pred and target predicate set, if any
+                hits = [(p_, search(pred+" ",p_+" ").end() - search(pred+" ",p_+" ").start()) for p in self.predicate_set for p_ in p if search(pred+" ",p_+" ") is not None]
+                # + " " #e.g., extra space to avoid that 'on' appears as part of 'front'
                 if len(hits) == 0:
                     print("Predicate %s not similar to any in the list" % pred)
                     continue #otherwise skip
 
-                # TODO find most exact/relevant match
-                match = ''
+                # Find most exact/relevant match
+                span = 0
+                for hit,l in hits:
+                    if hit==pred: # prioritise exact match, if any
+                        match=hit
+                        break
+                    # otherwise based on length of hit span
+                    if l> span:
+                        span = l
+                        match = hit
+
                 if match =='left':
-                    #TODO check how it is handled in the below methods
                     VG_stats = update_VG_stats(VG_stats, "leftOf", sub_syn, obj_syn)
                     # union of right and left also counts as beside
                     VG_stats = update_VG_stats(VG_stats, "beside", sub_syn, obj_syn)
@@ -81,11 +86,13 @@ class KnowledgeBase():
                     VG_stats = update_VG_stats(VG_stats, "beside", sub_syn, obj_syn)
                 elif match == 'front':
                     VG_stats = update_VG_stats(VG_stats, "inFrontOf", sub_syn, obj_syn)
-                elif match =='behind' or match=='above' or match=='below' or match =='on top of' or match=='in'\
+                elif match =='behind' or match=='above' or match=='below' or match=='in'\
                         or match=='against' or match=='beside' or match=='near':
                     VG_stats = update_VG_stats(VG_stats, match, sub_syn, obj_syn) #no need to reformat QSR name
                 elif match =='under':
                     VG_stats = update_VG_stats(VG_stats, "below", sub_syn, obj_syn)
+                elif match=='on top of':
+                    VG_stats = update_VG_stats(VG_stats, "onTopOf", sub_syn, obj_syn)
                 elif match =="inside":
                     VG_stats = update_VG_stats(VG_stats, "in", sub_syn, obj_syn)
                 elif match in ("next to","adjacent", "on side of"):
@@ -94,13 +101,10 @@ class KnowledgeBase():
                     VG_stats = update_VG_stats(VG_stats, "near", sub_syn, obj_syn)
 
                 elif match =='on':
-                    #TODO disambiguate on top of from against (i.e., seen as union of leanson and affixed on)
-                    pass
-                """
-                # Disambiguate ON uses based on postgis operators on 2D bboxes
-                if pred in alias_index["on"]:
+                    #Disambiguate on top of from against (i.e., seen as union of leanson and affixed on)
                     # 1. Populate spatial DB #
-                    rel_id = rel['relationship_id'] #to use as primary key
+                    # only used to check, through PostGIS, whether object is on top of another or not
+                    rel_id = rel['relationship_id']  # to use as primary key
 
                     # 2D Bounding box corners of subject (e.g., "cup ON table" subj = cup, obj = table)
                     # Format: from top-left corner anti-clockwise
@@ -115,22 +119,24 @@ class KnowledgeBase():
                     x1, y1 = rel['object']['x'], (rel['object']['y'] - rel['object']['h'])
                     x2, y2 = rel['object']['x'], rel['object']['y']
                     x3, y3 = (x1 + rel['object']['w']), rel['object']['y']
-                    x4, y4 = (x1 + rel['object']['w']), (rel['object']['y']-rel['object']['h'])
+                    x4, y4 = (x1 + rel['object']['w']), (rel['object']['y'] - rel['object']['h'])
                     obj_top_proj_coords = ((x1, y1), (x2, y2), (x3, y3), (x4, y4), (x1, y1))
 
-                    add_VG_row(self.cursor,[rel_id,pred,aliases, sub_coords, obj_top_proj_coords])
-                    self.connection.commit() # new row needs to be visible/up-to-date to compute operations on it
+                    add_VG_row(self.cursor, [rel_id, pred, sub_coords, obj_top_proj_coords])
+                    self.connection.commit()
 
-                    # Do the bottom-half space projection of subject box and the object bbox overlap?
-                    # fetch PostGis relations between bounding box pair
-                    overlaps,touches = compute_spatial_op(self.cursor, rel_id)
-                    if not (overlaps or touches):
-                        pred = 'near' # generalises to "near" because not strictly "on"
+                    overlaps, touches = compute_spatial_op(self.cursor, rel_id)
+                    if overlaps or touches: # if the subject overlaps or touches the top hs projection of object
+                        #then on top of case
+                        match = 'onTopOf'
+                    else: #against cases
+                        match = 'against'
+                    VG_stats = update_VG_stats(VG_stats, match, sub_syn, obj_syn)
 
-                # 2. update VG predicate statistics
-                VG_stats = update_VG_stats(VG_stats, pred, aliases,alias_index,sub_syn, obj_syn)
-                """
-        # save stats locally
+                #Plus, all spatial rels except 'above' count as 'near'
+                if match!='above': VG_stats = update_VG_stats(VG_stats, 'near', sub_syn, obj_syn)
+
+        # save VG stats locally
         with open(self.path_to_VGstats, 'w') as fout:
             json.dump(VG_stats,fout)
         print("Data preparation complete... took %f seconds" % (time.time() - start))

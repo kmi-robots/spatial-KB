@@ -34,21 +34,18 @@ def create_VG_table(cursor):
         "CREATE TABLE IF NOT EXISTS VG_RELATIONS("
         "relation_id serial PRIMARY KEY,"
         "predicate_name varchar NOT NULL,"
-        "predicate_aliases varchar,"
         "subject_polygon geometry,"
         "object_top_projection geometry);")
-
     print("DB table VG_RELATIONS created or exists already")
 
-
 def add_VG_row(cursor,qargs):
-    rel_id, pred, aliases, sub_coords, obj_coords = qargs
+    rel_id, pred, sub_coords, obj_coords = qargs
     spoly_str = coords2polygon(sub_coords)
     opoly_str = coords2polygon(obj_coords)
 
-    cursor.execute("""INSERT INTO VG_RELATIONS(relation_id, predicate_name, predicate_aliases,subject_polygon,object_top_projection)
-                   VALUES (%s,%s,%s,ST_GeomFromText(%s),ST_GeomFromText(%s));
-                   """,(rel_id,pred,str(aliases),spoly_str,opoly_str))
+    cursor.execute("""INSERT INTO VG_RELATIONS(relation_id, predicate_name, subject_polygon,object_top_projection)
+                   VALUES (%s,%s,ST_GeomFromText(%s),ST_GeomFromText(%s));
+                   """,(rel_id,pred,spoly_str,opoly_str))
 
     print("Relation datapoint %s added to VG_RELATIONS" % rel_id)
 

@@ -4,24 +4,9 @@ from collections import OrderedDict,Counter
 
 
 def load_rel_bank(KBobj):
-    with open(KBobj.path_to_VGrel) as ind: #, open(KBobj.path_to_predicate_aliases) as aliasin:
-        #alias_list = aliasin.read().splitlines()[:-1]  # last line is empty
+    with open(KBobj.path_to_VGrel) as ind:
         raw_data = json.load(ind)
-
-    """alias_index = OrderedDict()
-    for aline in alias_list:
-        alist = aline.split(",")
-        # also check for duplicate aliases which are not at first position in each line
-        match_index = [i for i, vlist in enumerate(alias_index.values()) if alist[0] in vlist]
-        if alist[0] in alias_index:
-            alias_index[alist[0]].extend(alist[1:])
-        elif len(match_index) > 0:
-            k = list(alias_index.items())[match_index[0]][0]
-            alias_index[k].extend(alist[1:])
-        else:
-            alias_index[alist[0]] = alist"""
-    return raw_data #,alias_index
-
+    return raw_data
 
 
 def update_VG_stats(stats_dict,pred,sub_syn, obj_syn):
