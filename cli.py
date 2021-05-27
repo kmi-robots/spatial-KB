@@ -45,6 +45,9 @@ def main():
     print("Took % fseconds." % float(time.time() - start))
 
     reasoner = ObjectReasoner(args)
+
+    #TODO exclude crops without depth data associated
+
     # Nfold stratified cross-validation for test results
     # subsample test set to devote a small portion to param tuning
     skf = StratifiedKFold(n_splits=args.nsplits)

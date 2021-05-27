@@ -8,6 +8,7 @@ import numpy as np
 import json
 import time
 import networkx as nx
+from nltk.corpus import wordnet as wn
 from evalscript import eval_singlemodel
 from PostGIS import *
 
@@ -67,6 +68,7 @@ class ObjectReasoner():
                 #TODO integrate size correction as well,
                 # but this time dimensions are derived from postgis database
                 # and image-wise instead of crop by crop
+                # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
 
         disconnect_DB(tmp_conn, tmp_cur) #close spatial DB connection
         procTime = float(time.time() - start)  # global proc time
@@ -80,6 +82,7 @@ class ObjectReasoner():
         return eval_dictionary
 
     def space_validate(self,obj_list,qsr_graph,spatialDB):
+        all_classes = list(self.mapper.keys())
         # To make correction independent from the order objects in each img are picked, we interpret QSRs based on original ML prediction and do not correct labels in the QSR
 
         for oid in obj_list: #for each object to correct/validate
@@ -92,6 +95,25 @@ class ObjectReasoner():
                         for f,ref,r in qsr_graph.out_edges(oid, data=True)] #rels where obj is figure
             ref_qsrs = [(self.remapper[self.labels[self.fnames.index(f)]],label_txt,r['QSR'])
                         for f,ref,r in qsr_graph.in_edges(oid, data=True)] # rels where obj is reference
-            #TODO use these to query VG stats
 
-            # loaded as spatialDB.KB
+            #Class probabilities based on VG stats
+            #TODO add Wordnet synsets to class index json (using the API not enough, e.g., correct synset of radiator is not n01 but n02)
+            sub_syn,obj_syn=None,None
+            for _,ref,r in fig_qsrs: #rels where obj is figure
+                fprobs = [(c,float(spatialDB.KB.VG_stats['predicates']\
+                                       [r]['relations'][str((str(sub_syn[0]), str(obj_syn[0])))] \
+                                   /spatialDB.KB.VG_stats['objects'][str(obj_syn[0])][r] )) \
+                                        for c in all_classes]
+                fprobs =sorted(fprobs, key=lambda x: x[1], reverse=True) #sort by prob, descending
+                #TODO combine across relations/QSRs
+
+            for f,_,r in ref_qsrs: # rels where obj is reference
+                refprobs = [(c,float(spatialDB.KB.VG_stats['predicates']\
+                                       [r]['relations'][str((str(sub_syn[0]), str(obj_syn[0])))] \
+                                   /spatialDB.KB.VG_stats['subjects'][str(obj_syn[0])][r] )) \
+                                        for c in all_classes]
+                refprobs =sorted(refprobs, key=lambda x: x[1], reverse=True) #sort by prob, descending
+                # TODO combine across relations/QSRs
+
+            #TODO combine fprobs and refprobs together
+            # + weight all by ML confidence? (inverse of L2 dis in ranking)
