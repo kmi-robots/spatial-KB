@@ -25,7 +25,7 @@ class KnowledgeBase():
         create_VG_table(self.cursor)
 
         # Check if data were already pre-processed before
-        if not os.path.isfile(self.path_to_VGstats): #data preparation needed
+        if not os.path.isfile(self.path_to_VGstats): # data preparation needed
             self.VG_stats = self.data_prep() # also insert data in DB table
         else:
             with open(self.path_to_VGstats) as fin:
@@ -131,7 +131,7 @@ class KnowledgeBase():
                     if overlaps or touches: # if the subject overlaps or touches the top hs projection of object
                         #then on top of case
                         match = 'onTopOf'
-                    else: #against cases
+                    else: #against cases  #we see it as the union of affixed on and lean on
                         match = 'against'
                     VG_stats = update_VG_stats(VG_stats, match, sub_syn, obj_syn)
 

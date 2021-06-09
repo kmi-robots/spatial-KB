@@ -17,7 +17,6 @@ def update_VG_stats(stats_dict,pred,sub_syn, obj_syn):
     #    stats_dict = add_relation_counts(stats_dict, "near", alias_index["near"], sub_syn, obj_syn)
     return stats_dict
 
-
 def add_relation_counts(stats_dict,pred,sub_syn, obj_syn):
     # How many times subj - pred - obj?
     if pred not in stats_dict["predicates"]:
