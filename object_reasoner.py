@@ -8,7 +8,6 @@ import numpy as np
 import json
 import time
 import networkx as nx
-from nltk.corpus import wordnet as wn
 from evalscript import eval_singlemodel
 from PostGIS import *
 
@@ -17,10 +16,12 @@ class ObjectReasoner():
     def __init__(self, args):
         with open(os.path.join(args.path_to_pred, 'test-labels.txt')) as txtf, \
                 open(os.path.join(args.path_to_pred, 'class_to_index.json')) as cin, \
+                open(os.path.join(args.path_to_pred, 'class_to_synset.json')) as sin, \
                 open(os.path.join(args.path_to_pred, 'test-imgs.txt')) as txti:
             self.labels = txtf.read().splitlines()  # gt labels for each test img
             self.mapper = json.load(cin)
             self.fnames= [p.split('/')[-1].split('.')[0] for p in txti.read().splitlines()] #extract basename from imgpath
+            self.taxonomy = json.load(sin)
         self.predictions = np.load(('%s/test_predictions_%s.npy' % (args.path_to_pred, args.baseline)),
                                    allow_pickle=True)
         self.remapper = dict((v, k) for k, v in self.mapper.items())  # swap keys with indices
@@ -46,7 +47,10 @@ class ObjectReasoner():
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
                 QSRs.add_nodes_from(img_ids.keys())
+                Gt_ind, Gt_labs =[], []
                 for o_id, _ in img_ids.items(): # find figures of each reference
+                    Gt_ind.append(self.fnames.index(o_id))
+                    Gt_labs.append(self.remapper[self.labels[self.fnames.index(o_id)]])
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
                     if len(figure_objs)>0: #, if any
                         #Find base QSRs between figure and nearby ref
@@ -58,9 +62,11 @@ class ObjectReasoner():
                 # which ML predictions to correct in that image?
                 if self.scenario =='best':
                     #correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
-                    tbcorr = [id_ for id_ in img_ids if self.labels[self.fnames.index(id_)] != self.predictions[self.fnames.index(id_),0,0] ]
+                    tbcorr = [id_ for id_ in img_ids if self.labels[self.fnames.index(id_)] != \
+                              self.predictions[self.fnames.index(id_),0,0] ]
                 elif self.scenario == 'selected': # select for correction, based on confidence
-                    tbcorr = [id_ for id_ in img_ids if self.predictions[self.fnames.index(id_), 0, 1] >= self.epsilon_set[0]] #where L2 distance greater than conf thresh
+                    tbcorr = [id_ for id_ in img_ids if self.predictions[self.fnames.index(id_), 0, 1] \
+                              >= self.epsilon_set[0]] #where L2 distance greater than conf thresh
                 else: tbcorr = img_ids #validate all
 
                 # proceed with validation/correction based on spatial knowledge
@@ -89,6 +95,7 @@ class ObjectReasoner():
             i = self.fnames.index(oid)
             ML_rank = self.predictions[i, :]
             label_txt = self.remapper[self.labels[i]]
+            pred_label = self.remapper[ML_rank[0][0]]
 
             # retrieve QSRs for that object
             fig_qsrs = [(label_txt,self.remapper[self.labels[self.fnames.index(ref)]],r['QSR'])
@@ -96,13 +103,13 @@ class ObjectReasoner():
             ref_qsrs = [(self.remapper[self.labels[self.fnames.index(f)]],label_txt,r['QSR'])
                         for f,ref,r in qsr_graph.in_edges(oid, data=True)] # rels where obj is reference
 
-            #Class probabilities based on VG stats
-            #TODO add Wordnet synsets to class index json (using the API not enough, e.g., correct synset of radiator is not n01 but n02)
-            sub_syn,obj_syn=None,None
+            #Class tipicality scores based on VG stats
+            """sub_syn, obj_syn = None, None
             for _,ref,r in fig_qsrs: #rels where obj is figure
+
                 fprobs = [(c,float(spatialDB.KB.VG_stats['predicates']\
-                                       [r]['relations'][str((str(sub_syn[0]), str(obj_syn[0])))] \
-                                   /spatialDB.KB.VG_stats['objects'][str(obj_syn[0])][r] )) \
+                                       [r]['relations'][str((str(sub_syn), str(obj_syn)))] \
+                                   /spatialDB.KB.VG_stats['objects'][str(obj_syn)][r] )) \
                                         for c in all_classes]
                 fprobs =sorted(fprobs, key=lambda x: x[1], reverse=True) #sort by prob, descending
                 #TODO combine across relations/QSRs
@@ -117,3 +124,5 @@ class ObjectReasoner():
 
             #TODO combine fprobs and refprobs together
             # + weight all by ML confidence? (inverse of L2 dis in ranking)
+            """
+        return

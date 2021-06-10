@@ -12,6 +12,7 @@ def subsample(Reasonerobj, test1_index, test2_index, allclasses):
     # generate test splits so that all contain the same distribution of classes, or as close as possible
     # retain larger split as test set, smaller split is for tuning the epsilon params
     Reasonerobj.labels = [lbl for i, lbl in enumerate(Reasonerobj.labels) if i in test1_index]
+    Reasonerobj.fnames = [nm for i, nm in enumerate(Reasonerobj.fnames) if i in test1_index]
     fullpredictions, fullpredictions2 = Reasonerobj.predictions.copy(), Reasonerobj.predictions.copy()
     Reasonerobj.predictions = fullpredictions[test1_index]
     predictions2 = fullpredictions2[test2_index]

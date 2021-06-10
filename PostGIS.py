@@ -220,6 +220,7 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.):
     D is the space granularity as defined in the paper"""
     tmp_conn, tmp_cur = session
     for figure_id in figure_objs:
+
         if not qsr_graph.has_node(figure_id): #add new node if not already there
             qsr_graph.add_node(figure_id)
         #Use postGIS for deriving truth values of base operators
