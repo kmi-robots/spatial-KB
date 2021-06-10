@@ -214,7 +214,7 @@ def find_neighbours(session, ref_id, ordered_objs,T=2):
     figures = [id_ for id_ in nearby if id_ in candidates]
     return figures
 
-def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.):
+def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     """
     Expects qsrs to be collected as nx.MultiDGraph
     D is the space granularity as defined in the paper"""
@@ -243,7 +243,7 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.):
         if res[0] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='touches')
         if res[1] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='intersects')
 
-        if res[1] is True and (res[3]-res[2]) <= D: #if volume of intersection very close to volume of smaller object, smaller object is completely contained
+        if res[1] is True and res[3] == res[2]: #if volume of intersection very close to volume of smaller object, smaller object is completely contained
             qsr_graph.add_edge(figure_id, ref_id, QSR='completely_contained')
         elif res[1] is True and (res[3]-res[2])> D and res[10]<res[11]: #intersect but only partially In
             qsr_graph.add_edge(figure_id, ref_id, QSR='partially_contained')

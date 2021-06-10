@@ -10,6 +10,7 @@ import time
 import networkx as nx
 from evalscript import eval_singlemodel
 from PostGIS import *
+from utils import graphs as ugr
 
 
 class ObjectReasoner():
@@ -47,10 +48,9 @@ class ObjectReasoner():
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
                 QSRs.add_nodes_from(img_ids.keys())
-                Gt_ind, Gt_labs =[], []
-                for o_id, _ in img_ids.items(): # find figures of each reference
-                    Gt_ind.append(self.fnames.index(o_id))
-                    Gt_labs.append(self.remapper[self.labels[self.fnames.index(o_id)]])
+                lmapping ={}
+                for i, (o_id, _) in enumerate(img_ids.items()): # find figures of each reference
+                    lmapping[o_id]=str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
                     if len(figure_objs)>0: #, if any
                         #Find base QSRs between figure and nearby ref
@@ -58,7 +58,8 @@ class ObjectReasoner():
                 # after all references in image have been examined
                 # derive special cases of ON
                 QSRs = infer_special_ON(QSRs)
-
+                QSRs_H= nx.relabel_nodes(QSRs,lmapping) #human-readable ver
+                ugr.plot_graph(QSRs_H)
                 # which ML predictions to correct in that image?
                 if self.scenario =='best':
                     #correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
