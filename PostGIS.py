@@ -7,7 +7,7 @@ import psycopg2
 from psycopg2 import Error
 import keyring # used for more secure pw storage
 from collections import OrderedDict
-
+from utils.x3domviz import generate_html_viz
 
 def connect_DB(user,dbname):
     try:
@@ -74,7 +74,7 @@ def coords2polygon(coord_list):
     return "POLYGON(("+",".join(t for t in coords_)+"))"
 
 
-def create_boxes(dbobj, sf=2.0):
+def create_boxes(dbobj, sf=1.2):
     """Creation of min oriented bounding box, contextualised bounding box
     and six halfspaces, for each object/spatialRegion
     """
@@ -135,7 +135,7 @@ def create_boxes(dbobj, sf=2.0):
                         'St_Angle(St_MakeLine(ST_PointN(ST_ExteriorRing(base),1), ST_PointN(ST_ExteriorRing(base),2)),'\
 		                'St_MakeLine(ST_MakePoint(0,0), ST_MakePoint(0,1))) as alpha '\
 		                'FROM (SELECT ST_OrientedEnvelope(St_Collect((dbox).geom)) as base '\
-	  					'FROM(SELECT St_ZMax(cbb)- St_ZMin(cbb) as h, St_DumpPoints(cbb) as dbox,'\
+	  					'FROM(SELECT St_DumpPoints(cbb) as dbox, '\
                                 'St_ZMin(cbb) as zmin FROM single_snap '\
 		    					'WHERE object_id=%s) as dt '\
 	                            'WHERE St_Z((dbox).geom) = zmin)   as basal'\
@@ -176,16 +176,12 @@ def create_boxes(dbobj, sf=2.0):
                     ' backhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
                     ' WHERE object_id = %s;'
         dbobj.cursor.execute(up_others,
-                                (lefths, str(height * sf), zmin, righths, str(height * sf), zmin,
-                                 fronths,str(height * sf), zmin, backhs,str(height * sf), zmin, id_))
+                                (lefths, str(height), zmin, righths, str(height), zmin,
+                                 fronths,str(height), zmin, backhs,str(height), zmin, id_))
         dbobj.connection.commit()
     """Just for debugging/ visualize the 3D geometries we have just constructed"""
     # return XML representation for 3D web visualizer
-    """dbobj.cursor.execute('SELECT ST_AsX3D(bbox), ST_AsX3D(cbb), ST_AsX3D(tophsproj)  FROM single_snap;')
-    with open(os.path.join(os.environ['HOME'], 'hsdump.txt'), 'w') as outd:
-        for r in dbobj.cursor.fetchall():
-            outd.write(r[0] + ',' + r[1] + r[2] + '\n')
-    """
+    generate_html_viz(dbobj)
 
 def retrieve_ids_ord(session,timestamp):
     timestamp = '2020-05-15-11-02-54_646' #TODO remove when running on full set
@@ -240,14 +236,14 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
         res = tmp_cur.fetchone()
 
         # Relations are all directed from figure to reference
-        if res[0] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='touches')
+        """if res[0] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='touches')
         if res[1] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='intersects')
 
         if res[1] is True and res[3] == res[2]: #if volume of intersection very close to volume of smaller object, smaller object is completely contained
             qsr_graph.add_edge(figure_id, ref_id, QSR='completely_contained')
         elif res[1] is True and (res[3]-res[2])> D and res[10]<res[11]: #intersect but only partially In
             qsr_graph.add_edge(figure_id, ref_id, QSR='partially_contained')
-
+        """
         if res[4] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='above')
         if res[5] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='below')
         if res[6] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='leftOf')

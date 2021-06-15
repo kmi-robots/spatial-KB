@@ -57,6 +57,8 @@ class ObjectReasoner():
                         QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
                 # after all references in image have been examined
                 # derive special cases of ON
+                QSRs_H = nx.relabel_nodes(QSRs, lmapping)  # human-readable ver
+                ugr.plot_graph(QSRs_H)
                 QSRs = infer_special_ON(QSRs)
                 QSRs_H= nx.relabel_nodes(QSRs,lmapping) #human-readable ver
                 ugr.plot_graph(QSRs_H)
@@ -124,6 +126,5 @@ class ObjectReasoner():
                 # TODO combine across relations/QSRs
 
             #TODO combine fprobs and refprobs together
-            # + weight all by ML confidence? (inverse of L2 dis in ranking)
-            """
+            # + weight all by ML confidence? (inverse of L2 dis in ranking)"""
         return
