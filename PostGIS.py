@@ -149,24 +149,26 @@ def create_boxes(dbobj, sf=1.2):
 
         # Interpret what is L/R/front/back among those boxes
         # TODO replace 0,0 below with robot XY read from a table
-        dmin = float('inf')
-        amax = float('-inf')
+        all_dis =[]
+        all_angles = []
         allfbs = [q[1] for q in q_res]
         alllrs = [q[0] for q in q_res]
         for lr, fb, base in q_res:
-            # front is the nearest one to robot position
+            # Distance between robot position and hs centroid
             qdis = 'SELECT St_Distance(St_MakePoint(0,0), St_Centroid(St_GeomFromEWKT(%s)))'
             dbobj.cursor.execute(qdis, (fb,))
             qdisr = dbobj.cursor.fetchone()[0]
-            if qdisr < dmin:
-                fronths = fb
-            # Left one has the biggest angle with robot position and base centroid (St_Angle is computed clockwise)
+            all_dis.append(qdisr)
+            # angle between robot position and base centroid (St_Angle is computed clockwise)
             qang = 'SELECT St_Angle(St_MakeLine(St_MakePoint(0,0),St_Centroid(%s)), St_MakeLine(St_MakePoint(0,0)'\
                         ',St_Centroid(St_GeomFromEWKT(%s))))'
             dbobj.cursor.execute(qang, (base,lr))
             qangr = dbobj.cursor.fetchone()[0]
-            if qangr > amax:
-                lefths = lr
+            all_angles.append(qangr)
+        #front is the nearest one to robot position
+        fronths = q_res[all_dis.index(min(all_dis))][1]
+        #Left one has the biggest angle with robot position and base centroid
+        lefths = q_res[all_angles.index(max(all_angles))][0]
         backhs = [fb for fb in allfbs if fb!= fronths][0] # the one record which is not the front one will be the back one
         righths = [lr for lr in alllrs if lr!= lefths][0] # similarly for L/R
         # Extrude + Translate 3D & update table with halfspace columns

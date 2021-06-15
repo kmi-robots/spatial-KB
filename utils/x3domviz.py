@@ -18,7 +18,7 @@ def generate_html_viz(datab_object):
             outd.write('<shape><appearance><material></material></appearance>' + '\n')
             outd.write(r[0].replace('FaceSet','LineSet') + '\n')
             outd.write('</shape>' + '\n')
-            if i==0: #draw all boxes/hs only for one for readability
+            if i==1: #draw all boxes/hs only for one for readability
                 # CBBs are blue
                 outd.write('<shape><appearance><material emissiveColor="0. 0. 1.0"></material></appearance>' + '\n')
                 outd.write(r[1].replace('FaceSet','LineSet') + '\n')
@@ -32,21 +32,21 @@ def generate_html_viz(datab_object):
                 #outd.write(r[3].replace('FaceSet', 'LineSet') + '\n')
                 #outd.write('</shape>' + '\n')
                 # lefths are red
-                # outd.write('<shape><appearance><material emissiveColor="1.0 0. 0.0"></material></appearance>' + '\n')
-                # outd.write(r[4].replace('FaceSet', 'LineSet') + '\n')
-                # outd.write('</shape>' + '\n')
-                # righths green
-                # outd.write('<shape><appearance><material emissiveColor="0. 1.0 0."></material></appearance>' + '\n')
-                # outd.write(r[5].replace('FaceSet', 'LineSet') + '\n')
-                # outd.write('</shape>' + '\n')
-                # fronths are red
                 outd.write('<shape><appearance><material emissiveColor="1.0 0. 0.0"></material></appearance>' + '\n')
-                outd.write(r[6].replace('FaceSet', 'LineSet') + '\n')
+                outd.write(r[4].replace('FaceSet', 'LineSet') + '\n')
                 outd.write('</shape>' + '\n')
-                # backhs green
+                # righths green
                 outd.write('<shape><appearance><material emissiveColor="0. 1.0 0."></material></appearance>' + '\n')
-                outd.write(r[7].replace('FaceSet', 'LineSet') + '\n')
+                outd.write(r[5].replace('FaceSet', 'LineSet') + '\n')
                 outd.write('</shape>' + '\n')
+                # # fronths are red
+                # outd.write('<shape><appearance><material emissiveColor="1.0 0. 0.0"></material></appearance>' + '\n')
+                # outd.write(r[6].replace('FaceSet', 'LineSet') + '\n')
+                # outd.write('</shape>' + '\n')
+                # backhs green
+                # outd.write('<shape><appearance><material emissiveColor="0. 1.0 0."></material></appearance>' + '\n')
+                # outd.write(r[7].replace('FaceSet', 'LineSet') + '\n')
+                # outd.write('</shape>' + '\n')
         # closing nodes
         outd.write('<shape><plane></plane></shape></scene></x3d></body></html>')
     print("HTML report of 3D boxes created under %s" % tgtp)
