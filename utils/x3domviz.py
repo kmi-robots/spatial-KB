@@ -18,7 +18,7 @@ def generate_html_viz(datab_object):
             outd.write('<shape><appearance><material></material></appearance>' + '\n')
             outd.write(r[0].replace('FaceSet','LineSet') + '\n')
             outd.write('</shape>' + '\n')
-            if i==1: #draw all boxes/hs only for one for readability
+            if i==0: #draw all boxes/hs only for one for readability
                 # CBBs are blue
                 outd.write('<shape><appearance><material emissiveColor="0. 0. 1.0"></material></appearance>' + '\n')
                 outd.write(r[1].replace('FaceSet','LineSet') + '\n')

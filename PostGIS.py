@@ -200,7 +200,7 @@ def find_neighbours(session, ref_id, ordered_objs,T=2):
     #Find nearby objects which are also smaller in the ordering
     i = list(ordered_objs.keys()).index(ref_id)
     candidates = list(ordered_objs.keys())[i+1:] #candidate figure objects, i.e., smaller
-    # Which ones are also nearby?
+    # Which ones are nearby?
     tmp_conn, tmp_cur = session
     tmp_cur.execute('SELECT object_id FROM single_snap'\
                     ' WHERE ST_3DDWithin(bbox, '\
@@ -209,8 +209,7 @@ def find_neighbours(session, ref_id, ordered_objs,T=2):
                     'AND object_id != %s', (ref_id,str(T),ref_id))
 
     nearby = [t[0] for t in tmp_cur.fetchall()]
-    figures = [id_ for id_ in nearby if id_ in candidates]
-    return figures
+    return [id_ for id_ in nearby if id_ in candidates] # return only the ones which are both nearby and smaller than
 
 def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     """
@@ -218,7 +217,6 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     D is the space granularity as defined in the paper"""
     tmp_conn, tmp_cur = session
     for figure_id in figure_objs:
-
         if not qsr_graph.has_node(figure_id): #add new node if not already there
             qsr_graph.add_node(figure_id)
         #Use postGIS for deriving truth values of base operators
@@ -238,8 +236,8 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
         res = tmp_cur.fetchone()
 
         # Relations are all directed from figure to reference
-        """if res[0] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='touches')
-        if res[1] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='intersects')
+        if res[0] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='touches')
+        """if res[1] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='intersects')
 
         if res[1] is True and res[3] == res[2]: #if volume of intersection very close to volume of smaller object, smaller object is completely contained
             qsr_graph.add_edge(figure_id, ref_id, QSR='completely_contained')
@@ -269,8 +267,8 @@ def infer_special_ON(local_graph):
     but propagates new QSRs found to global graph"""
     for node1 in local_graph.nodes():
         # if obj1 touches or is touched by obj2
-        t = [(f,ref,r) for f,ref,r in local_graph.out_edges(node1, data=True) if r['QSR']=='touches']
-        is_t = [(f,ref,r) for f,ref,r in local_graph.in_edges(node1, data=True) if r['QSR']=='touches']
+        t = [(f,ref,r) for f,ref,r in local_graph.out_edges(node1, data=True) if r['QSR'] =='touches']
+        is_t = [(f,ref,r) for f,ref,r in local_graph.in_edges(node1, data=True) if r['QSR'] =='touches']
         is_a = [f for f,_,r in local_graph.in_edges(node1, data=True) if r['QSR']=='below'] #edges where obj1 is reference and figure objects are below it
 
         if len(t)==0 and len(is_t)==0: continue #skip

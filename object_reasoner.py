@@ -7,6 +7,7 @@ where knowledge-based correction of the ML predictions is applied
 import numpy as np
 import json
 import time
+import statistics
 import networkx as nx
 from evalscript import eval_singlemodel
 from PostGIS import *
@@ -44,24 +45,31 @@ class ObjectReasoner():
         for fname in self.fnames:
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                QSRs = nx.MultiDiGraph() # graph is local to the img and thrown away afterwards to speed up # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
+                QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
                 QSRs.add_nodes_from(img_ids.keys())
-                lmapping ={}
-                for i, (o_id, _) in enumerate(img_ids.items()): # find figures of each reference
-                    lmapping[o_id]=str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]
+                lmapping =dict((o_id, str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
+                for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
+                    #QSRs = nx.MultiDiGraph()
+                    #i = 7
+                    #o_id = list(img_ids.keys())[i]
+                    #QSRs.add_node(o_id)
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
+                    #QSRs.add_nodes_from(figure_objs)
                     if len(figure_objs)>0: #, if any
                         #Find base QSRs between figure and nearby ref
                         QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
+                        # debug / visualize just one at a time
+                        #QSRs_H = nx.relabel_nodes(QSRs, lmapping)  # human-readable ver
+                        #ugr.plot_graph(QSRs_H)
+                        #continue
+
                 # after all references in image have been examined
                 # derive special cases of ON
-                QSRs_H = nx.relabel_nodes(QSRs, lmapping)  # human-readable ver
-                ugr.plot_graph(QSRs_H)
                 QSRs = infer_special_ON(QSRs)
-                QSRs_H= nx.relabel_nodes(QSRs,lmapping) #human-readable ver
-                ugr.plot_graph(QSRs_H)
+                QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
+                #ugr.plot_graph(QSRs_H)
                 # which ML predictions to correct in that image?
                 if self.scenario =='best':
                     #correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
@@ -90,41 +98,81 @@ class ObjectReasoner():
         eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial_VG', K=5)
         return eval_dictionary
 
-    def space_validate(self,obj_list,qsr_graph,spatialDB):
-        all_classes = list(self.mapper.keys())
-        # To make correction independent from the order objects in each img are picked, we interpret QSRs based on original ML prediction and do not correct labels in the QSR
+    def space_validate(self,obj_list,qsr_graph,spatialDB, K=10):
+        # correction independent from the order objects in each img are picked, order of ML ranking and then combine topK scores
 
         for oid in obj_list: #for each object to correct/validate
             i = self.fnames.index(oid)
             ML_rank = self.predictions[i, :]
-            label_txt = self.remapper[self.labels[i]]
-            pred_label = self.remapper[ML_rank[0][0]]
+            hybrid_rank_atK = np.copy(ML_rank[:K])
+            for n, (cnum, L2dis) in enumerate(ML_rank[:K]): #for each class in the top-K rank
+                pred_label = self.remapper[cnum]
+                wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
+                if not wn_syn: continue  # skip objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
 
-            # retrieve QSRs for that object
-            fig_qsrs = [(label_txt,self.remapper[self.labels[self.fnames.index(ref)]],r['QSR'])
+                # retrieve QSRs for that object
+                fig_qsrs = [(pred_label,self.remapper[self.labels[self.fnames.index(ref)]],r['QSR'])
                         for f,ref,r in qsr_graph.out_edges(oid, data=True)] #rels where obj is figure
-            ref_qsrs = [(self.remapper[self.labels[self.fnames.index(f)]],label_txt,r['QSR'])
+                ref_qsrs = [(self.remapper[self.labels[self.fnames.index(f)]],pred_label,r['QSR'])
                         for f,ref,r in qsr_graph.in_edges(oid, data=True)] # rels where obj is reference
 
-            #Class tipicality scores based on VG stats
-            """sub_syn, obj_syn = None, None
-            for _,ref,r in fig_qsrs: #rels where obj is figure
+                #Tipicality scores based on VG stats
+                sub_syn = self.taxonomy[pred_label]
+                all_spatial_scores = []
+                for _,ref,r in fig_qsrs: #for each QSR where obj is figure, i.e., subject
+                    obj_syn = self.taxonomy[ref]
+                    if len(obj_syn)>1: # more than one synset
+                        typscores =[self.compute_typicality_score(spatialDB,sub_syn,osyn,r) for osyn in obj_syn]
+                        typscores = [s for s in typscores if s != 0.]  # keep only synset that of no-null typicality in order of taxonomy (from preferred synset to least preferred)
+                        if len(typscores) == 0:
+                            typscore = 0.
+                        else:
+                            typscore = typscores[0]  # first one in the order
+                    else: typscore = self.compute_typicality_score(spatialDB,sub_syn,obj_syn,r)
+                    all_spatial_scores.append((1. - typscore))  #track INVERSE of score (so that it is comparable
+                                                                # with L2 distances, i.e., scores that are minimised)
+                # Similarly, for QSRs where predicted obj is reference, i.e., object
+                obj_syn = self.taxonomy[pred_label]
+                for fig,_,r in ref_qsrs:
+                    sub_syn = self.taxonomy[fig]
+                    if len(obj_syn) > 1:
+                        typscores = [self.compute_typicality_score(spatialDB, ssyn, obj_syn, r) for ssyn in sub_syn]
+                        typscores = [s for s in typscores if s!= 0.] # keep only synset that of no-null typicality in order of taxonomy (from preferred synset to least preferred)
+                        if len(typscores)==0: typscore = 0.
+                        else: typscore = typscores[0] #first one in the order
+                    else: typscore = self.compute_typicality_score(spatialDB, sub_syn, obj_syn, r)
+                    all_spatial_scores.append((1. - typscore))  # track INVERSE of score
 
-                fprobs = [(c,float(spatialDB.KB.VG_stats['predicates']\
-                                       [r]['relations'][str((str(sub_syn), str(obj_syn)))] \
-                                   /spatialDB.KB.VG_stats['objects'][str(obj_syn)][r] )) \
-                                        for c in all_classes]
-                fprobs =sorted(fprobs, key=lambda x: x[1], reverse=True) #sort by prob, descending
-                #TODO combine across relations/QSRs
+                # Average across all QSRs
+                avg_spatial_score = statistics.mean(all_spatial_scores)
+                hybrid_rank_atK[n][1] += avg_spatial_score # add up to ML score
+            # Normalise scores across the topK classes, so it is between 0 and 1
+            # minmax norm
+            scores = hybrid_rank_atK[:,1]
+            min_, max_ = np.min(scores), np.max(scores)
+            hybrid_rank_atK[:, 1] = np.array([(x-min_)/(max_ - min_) for x in scores])
+            posthoc_rank = hybrid_rank_atK[np.argsort(hybrid_rank_atK[:, 1])] # order by score ascending
+            # ranking after correction is ..
+            continue
 
-            for f,_,r in ref_qsrs: # rels where obj is reference
-                refprobs = [(c,float(spatialDB.KB.VG_stats['predicates']\
-                                       [r]['relations'][str((str(sub_syn[0]), str(obj_syn[0])))] \
-                                   /spatialDB.KB.VG_stats['subjects'][str(obj_syn[0])][r] )) \
-                                        for c in all_classes]
-                refprobs =sorted(refprobs, key=lambda x: x[1], reverse=True) #sort by prob, descending
-                # TODO combine across relations/QSRs
 
-            #TODO combine fprobs and refprobs together
-            # + weight all by ML confidence? (inverse of L2 dis in ranking)"""
         return
+
+    def compute_typicality_score(self,spatialDB,sub_syn,obj_syn,rel):
+        #no of times the two appeared in that relation in VG
+        try:
+            nom = float(spatialDB.KB.VG_stats['predicates'][rel]['relations'][str((str(sub_syn), str(obj_syn)))])
+        except KeyError: #if any hit is found
+            return 0.
+        #no of times sub_syn was subject of r relation in VG
+        try:
+            denom1 = float(spatialDB.KB.VG_stats['subjects'][rel][sub_syn])
+        except KeyError: #if any hit is found
+            return 0.
+        #no of times obj_syn was object of r relation in VG
+        try:
+            denom2 = float(spatialDB.KB.VG_stats['objects'][rel][obj_syn])
+        except KeyError: #if any hit is found
+            return 0.
+
+        return nom / (denom1+denom2)
