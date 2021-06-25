@@ -262,6 +262,47 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     return qsr_graph
 
 
+def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, ht=0.5):
+    """Extract QSRs through PostGIS
+    between current object and surfaces marked as wall/floor
+    ht: threshold to find objects that are at floor height, i.e., min Z coordinate = 0
+    or near wall surfaces
+    """
+    tmp_conn, tmp_cur = session
+    # Use postGIS for deriving truth values of base operators
+    tmp_cur.execute("""SELECT ST_Zmin(bbox)
+                    FROM single_snap
+                    WHERE object_id = %s
+                    """,(obj_id,))
+    # Unpack results and infer QSR predicates
+    res = tmp_cur.fetchone()[0]
+    if res <= ht:
+        qsr_graph.add_edge(obj_id, 'floor', QSR='touches')
+        qsr_graph.add_edge(obj_id, 'floor', QSR='above')
+        qsr_graph.add_edge(obj_id, 'floor', QSR='onTopOf')
+        #also add relations in opposite direction #this is only to infer special ON cases later
+        qsr_graph.add_edge('floor', obj_id, QSR='touches')
+        qsr_graph.add_edge('floor', obj_id, QSR='below')
+
+    for wall_id in wall_list: #for all walls in map
+        tmp_cur.execute("""SELECT ST_3DDistance(obj.bbox,w.surface)
+                           FROM single_snap as obj, walls as w
+                           WHERE obj.object_id = %s
+                           AND w.id = %s
+                            """, (obj_id,wall_id))
+        res = tmp_cur.fetchone()[0]
+        if res <= ht:
+            qsr_graph.add_edge(obj_id, 'wall', QSR='touches')
+            qsr_graph.add_edge('wall', obj_id, QSR='touches') #also add relation in opposite direction
+    return qsr_graph
+
+
+def retrieve_walls(cursor):
+    cursor.execute(""" SELECT id
+                    from walls """)
+    return cursor.fetchall()
+
+
 def infer_special_ON(local_graph):
     """Iterates only over QSRs in current image
     but propagates new QSRs found to global graph"""

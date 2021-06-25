@@ -41,6 +41,7 @@ class ObjectReasoner():
         print("Reasoning for correction ... ")
         start = time.time()
         tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname) #open spatial DB connection
+        walls = retrieve_walls(tmp_cur) #retrieve all walls of map first
         already_processed = []
         for fname in self.fnames:
             tstamp = '_'.join(fname.split('_')[:-1])
@@ -50,26 +51,22 @@ class ObjectReasoner():
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
                 QSRs.add_nodes_from(img_ids.keys())
                 lmapping =dict((o_id, str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
+                lmapping['floor'] ='floor'
+                lmapping['wall'] ='wall'
                 for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
-                    #QSRs = nx.MultiDiGraph()
-                    #i = 7
-                    #o_id = list(img_ids.keys())[i]
-                    #QSRs.add_node(o_id)
+
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
-                    #QSRs.add_nodes_from(figure_objs)
                     if len(figure_objs)>0: #, if any
                         #Find base QSRs between figure and nearby ref
                         QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
-                        # debug / visualize just one at a time
-                        #QSRs_H = nx.relabel_nodes(QSRs, lmapping)  # human-readable ver
-                        #ugr.plot_graph(QSRs_H)
-                        #continue
+                        QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs)
 
                 # after all references in image have been examined
                 # derive special cases of ON
                 QSRs = infer_special_ON(QSRs)
                 QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
-                #ugr.plot_graph(QSRs_H)
+                ugr.plot_graph(QSRs_H)
+
                 # which ML predictions to correct in that image?
                 if self.scenario =='best':
                     #correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
@@ -82,6 +79,7 @@ class ObjectReasoner():
 
                 # proceed with validation/correction based on spatial knowledge
                 self.space_validate(tbcorr, QSRs,spatialDB)
+
                 #TODO integrate size correction as well,
                 # but this time dimensions are derived from postgis database
                 # and image-wise instead of crop by crop
@@ -112,18 +110,25 @@ class ObjectReasoner():
 
                 # retrieve QSRs for that object
                 fig_qsrs = [(pred_label,self.remapper[self.labels[self.fnames.index(ref)]],r['QSR'])
-                        for f,ref,r in qsr_graph.out_edges(oid, data=True)] #rels where obj is figure
+                        for f,ref,r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall','floor']] #rels where obj is figure
                 ref_qsrs = [(self.remapper[self.labels[self.fnames.index(f)]],pred_label,r['QSR'])
-                        for f,ref,r in qsr_graph.in_edges(oid, data=True)] # rels where obj is reference
+                        for f,ref,r in qsr_graph.in_edges(oid, data=True) if f not in ['wall','floor']] # rels where obj is reference
 
+                #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf floor'
+                surface_qsrs = [(pred_label,ref,r['QSR']) for f,ref,r \
+                                in qsr_graph.out_edges(oid, data=True) if ref in ['wall','floor']]
+                fig_qsrs.extend(surface_qsrs) # merge into list of fig/ref relations
                 #Tipicality scores based on VG stats
                 sub_syn = self.taxonomy[pred_label]
                 all_spatial_scores = []
                 for _,ref,r in fig_qsrs: #for each QSR where obj is figure, i.e., subject
-                    obj_syn = self.taxonomy[ref]
+                    if ref=='wall': obj_syn ='wall.n.01' #cases where reference is wall or floor
+                    elif ref=='floor': obj_syn ='floor.n.01'
+                    else: obj_syn = self.taxonomy[ref]
                     if len(obj_syn)>1: # more than one synset
                         typscores =[self.compute_typicality_score(spatialDB,sub_syn,osyn,r) for osyn in obj_syn]
-                        typscores = [s for s in typscores if s != 0.]  # keep only synset that of no-null typicality in order of taxonomy (from preferred synset to least preferred)
+                        typscores = [s for s in typscores if s != 0.]  # keep only synset that of no-null typicality
+                                                                       # in order of taxonomy (from preferred synset to least preferred)
                         if len(typscores) == 0:
                             typscore = 0.
                         else:
@@ -131,6 +136,7 @@ class ObjectReasoner():
                     else: typscore = self.compute_typicality_score(spatialDB,sub_syn,obj_syn,r)
                     all_spatial_scores.append((1. - typscore))  #track INVERSE of score (so that it is comparable
                                                                 # with L2 distances, i.e., scores that are minimised)
+
                 # Similarly, for QSRs where predicted obj is reference, i.e., object
                 obj_syn = self.taxonomy[pred_label]
                 for fig,_,r in ref_qsrs:
@@ -146,6 +152,7 @@ class ObjectReasoner():
                 # Average across all QSRs
                 avg_spatial_score = statistics.mean(all_spatial_scores)
                 hybrid_rank_atK[n][1] += avg_spatial_score # add up to ML score
+
             # Normalise scores across the topK classes, so it is between 0 and 1
             # minmax norm
             scores = hybrid_rank_atK[:,1]
@@ -153,10 +160,8 @@ class ObjectReasoner():
             hybrid_rank_atK[:, 1] = np.array([(x-min_)/(max_ - min_) for x in scores])
             posthoc_rank = hybrid_rank_atK[np.argsort(hybrid_rank_atK[:, 1])] # order by score ascending
             # ranking after correction is ..
-            continue
-
-
-        return
+            # replace predictions at that index with corrected predictions
+            self.predictions[i, :] = posthoc_rank
 
     def compute_typicality_score(self,spatialDB,sub_syn,obj_syn,rel):
         #no of times the two appeared in that relation in VG
@@ -174,5 +179,4 @@ class ObjectReasoner():
             denom2 = float(spatialDB.KB.VG_stats['objects'][rel][obj_syn])
         except KeyError: #if any hit is found
             return 0.
-
         return nom / (denom1+denom2)
