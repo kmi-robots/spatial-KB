@@ -79,33 +79,40 @@ def create_boxes(dbobj, sf=1.2):
     and six halfspaces, for each object/spatialRegion
     """
     # for all objects in spatial DB
+    # except crops without depth data associated , i.e., if obj polyhedral surface or projection2d is null
     # Find min oriented 3D box bounding of polyhedral surface
     dbobj.cursor.execute('SELECT object_id, ST_OrientedEnvelope(projection_2d), ST_ZMin(object_polyhedral_surface),'
-                   ' ST_ZMax(object_polyhedral_surface) FROM single_snap;')
-    query_res = [(str(r[0]), str(r[1]), float(r[2]), float(r[3])) for r in dbobj.cursor.fetchall()]
+                   ' ST_ZMax(object_polyhedral_surface) FROM semantic_map '
+                         'where object_polyhedral_surface is not null;')
+    # Also filter out blacklisted objects that were not run with size reasoning
+    blacklist = ['246928_6', '655068_5', '655068_6']
+    query_res = [(str(r[0]), str(r[1]), float(r[2]), float(r[3])) for r in dbobj.cursor.fetchall() \
+                 if '_'.join(str(r[0]).split('_')[1:]) not in blacklist]
+    #images to process
+    tbprocessed = [q[0] for q in query_res]
+
     for id_, envelope, zmin, zmax in query_res:
         height = zmax - zmin
         # ST_Translate is needed here because the oriented envelope is projected on XY so we also need to translate
         # everything up by the original height after extruding in this case
-        up1_mask = 'UPDATE single_snap SET bbox = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
+        up1_mask = 'UPDATE semantic_map SET bbox = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
                    ' WHERE object_id = %s;'
         dbobj.cursor.execute(up1_mask, (envelope, str(height), zmin, id_))
         dbobj.connection.commit()
 
-        # TODO replace 0,0 below with robot XY read from a table
         # Derive CBB
         dbobj.cursor.execute(
-            'SELECT ST_Angle(ST_MakeLine(ST_MakePoint(0, 0), ST_Centroid(ST_OrientedEnvelope(projection_2d))), '
+            'SELECT ST_Angle(ST_MakeLine(robot_position, ST_Centroid(ST_OrientedEnvelope(projection_2d))), '
             'ST_MakeLine(ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 1), '
             'ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2))) '
-            'FROM single_snap '
+            'FROM semantic_map '
             'WHERE object_id = \'' + id_ + '\';')
 
         dbobj.connection.commit()
 
         angle = dbobj.cursor.fetchone()[0]
 
-        up2_mask = 'UPDATE single_snap SET cbb = ST_Rotate(bbox, %s,' \
+        up2_mask = 'UPDATE semantic_map SET cbb = ST_Rotate(bbox, %s,' \
                    ' ST_Centroid(ST_OrientedEnvelope(projection_2d)))' \
                    ' WHERE object_id = %s;'
         dbobj.cursor.execute(up2_mask, (str(angle), id_))
@@ -114,31 +121,31 @@ def create_boxes(dbobj, sf=1.2):
         # Derive the six halfspaces, based on scaling factor sf
 
         # top and bottom ones based on MinOriented, i.e., extruded again from oriented envelope
-        up_topbtm = 'UPDATE single_snap SET  tophsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),'\
+        up_topbtm = 'UPDATE semantic_map SET  tophsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),'\
                     ' bottomhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)'\
                    ' WHERE object_id = %s;'
         dbobj.cursor.execute(up_topbtm, (envelope, str(height*sf), zmax, envelope, str(height * sf), zmin-height*sf, id_))
 
         # Identify the base of the CBB, i.e., oriented envelope of points with z=zmin
         # Define 4 rectangles from the base and expand 2D
-        # TODO replace 0,0 below with robot XY read from a table
-        q_hs = 'SELECT St_Rotate(hsX, alpha, St_centroid(aligned_base)), St_Rotate(hsY, alpha, St_centroid(aligned_base)), base '\
+        q_hs = 'SELECT St_Rotate(hsX, alpha, St_centroid(aligned_base)), St_Rotate(hsY, alpha, St_centroid(aligned_base)), base, robot_position '\
                 'FROM('\
-                    'SELECT (St_Dump(r1)).geom as hsX, (St_Dump(r2)).geom as hsY, alpha, aligned_base, base, w, d '\
+                    'SELECT (St_Dump(r1)).geom as hsX, (St_Dump(r2)).geom as hsY, alpha, aligned_base, base, w, d, robot_position '\
                     'FROM('\
-                    'SELECT alpha, aligned_base, base, w, d, St_Difference(St_Expand(aligned_base, %s * w, 0),'\
+                    'SELECT robot_position, alpha, aligned_base, base, w, d, St_Difference(St_Expand(aligned_base, %s * w, 0),'\
                         'St_Scale(aligned_base, St_MakePoint(1.00001,1.00001), St_Centroid(aligned_base))) as r1,'\
                         'St_Difference(St_Expand(aligned_base, 0, %s * d), St_Scale(aligned_base,'\
                         'St_MakePoint(1.00001,1.00001), St_Centroid(aligned_base))) as r2 '\
-                        'FROM( SELECT St_Rotate(base,-alpha, ST_Centroid(base)) as aligned_base, w, d, alpha, base '\
-                        'FROM( SELECT base, St_XMax(base) - St_XMin(base) as w, St_YMax(base) - St_YMin(base) as d,'\
+                        'FROM( SELECT St_Rotate(base,-alpha, ST_Centroid(base)) as aligned_base, w, d, alpha, base, robot_position '\
+                        'FROM( SELECT robot_position,base, St_XMax(base) - St_XMin(base) as w, St_YMax(base) - St_YMin(base) as d,'\
                         'St_Angle(St_MakeLine(ST_PointN(ST_ExteriorRing(base),1), ST_PointN(ST_ExteriorRing(base),2)),'\
-		                'St_MakeLine(ST_MakePoint(0,0), ST_MakePoint(0,1))) as alpha '\
-		                'FROM (SELECT ST_OrientedEnvelope(St_Collect((dbox).geom)) as base '\
+		                'St_MakeLine(robot_position, ST_MakePoint(ST_X(robot_position),ST_Y(robot_position)+ 1))) as alpha '\
+		                'FROM (SELECT ST_OrientedEnvelope(St_Collect((dbox).geom)) as base, robot_position '\
 	  					'FROM(SELECT St_DumpPoints(cbb) as dbox, '\
-                                'St_ZMin(cbb) as zmin FROM single_snap '\
+                                'St_ZMin(cbb) as zmin, robot_position FROM semantic_map '\
 		    					'WHERE object_id=%s) as dt '\
-	                            'WHERE St_Z((dbox).geom) = zmin)   as basal'\
+	                            'WHERE St_Z((dbox).geom) = zmin '\
+                                'GROUP BY robot_position )  as basal '\
                         ') as angles'\
                         ') as aligned'\
                         ') as hs'\
@@ -148,21 +155,20 @@ def create_boxes(dbobj, sf=1.2):
         q_res = dbobj.cursor.fetchall() # for each object, 2 rows by 3 colums (i.e., 4 halfspaces + base of cbb repeated twice)
 
         # Interpret what is L/R/front/back among those boxes
-        # TODO replace 0,0 below with robot XY read from a table
         all_dis =[]
         all_angles = []
         allfbs = [q[1] for q in q_res]
         alllrs = [q[0] for q in q_res]
-        for lr, fb, base in q_res:
+        for lr, fb, base,rp in q_res:
             # Distance between robot position and hs centroid
-            qdis = 'SELECT St_Distance(St_MakePoint(0,0), St_Centroid(St_GeomFromEWKT(%s)))'
-            dbobj.cursor.execute(qdis, (fb,))
+            qdis = 'SELECT St_Distance(%s, St_Centroid(St_GeomFromEWKT(%s)))'
+            dbobj.cursor.execute(qdis, (rp,fb,))
             qdisr = dbobj.cursor.fetchone()[0]
             all_dis.append(qdisr)
             # angle between robot position and base centroid (St_Angle is computed clockwise)
-            qang = 'SELECT St_Angle(St_MakeLine(St_MakePoint(0,0),St_Centroid(%s)), St_MakeLine(St_MakePoint(0,0)'\
+            qang = 'SELECT St_Angle(St_MakeLine(%s,St_Centroid(%s)), St_MakeLine(%s '\
                         ',St_Centroid(St_GeomFromEWKT(%s))))'
-            dbobj.cursor.execute(qang, (base,lr))
+            dbobj.cursor.execute(qang, (rp,base,rp,lr))
             qangr = dbobj.cursor.fetchone()[0]
             all_angles.append(qangr)
         #front is the nearest one to robot position
@@ -172,7 +178,7 @@ def create_boxes(dbobj, sf=1.2):
         backhs = [fb for fb in allfbs if fb!= fronths][0] # the one record which is not the front one will be the back one
         righths = [lr for lr in alllrs if lr!= lefths][0] # similarly for L/R
         # Extrude + Translate 3D & update table with halfspace columns
-        up_others = 'UPDATE single_snap SET  lefthsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),' \
+        up_others = 'UPDATE semantic_map SET  lefthsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),' \
                     ' righthsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),' \
                     ' fronthsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s),' \
                     ' backhsproj = ST_Translate(ST_Extrude(%s, 0, 0, %s), 0, 0, %s)' \
@@ -183,12 +189,14 @@ def create_boxes(dbobj, sf=1.2):
         dbobj.connection.commit()
     """Just for debugging/ visualize the 3D geometries we have just constructed"""
     # return XML representation for 3D web visualizer
-    generate_html_viz(dbobj)
+    tstamp = '2020-05-15-11-02-54_646'  # TODO remove when running on full set
+    generate_html_viz(dbobj,tstamp)
+    return tbprocessed
 
 def retrieve_ids_ord(session,timestamp):
-    timestamp = '2020-05-15-11-02-54_646' #TODO remove when running on full set
+
     tmp_conn, tmp_cur = session
-    tmp_cur.execute('SELECT object_id, ST_Volume(bbox) as v FROM single_snap '\
+    tmp_cur.execute('SELECT object_id, ST_Volume(bbox) as v FROM semantic_map '\
                     'WHERE object_id LIKE %s '\
                     'ORDER BY v DESC', (timestamp+'%',)) #use string pattern matching to check only first part of ID
     # & order objects by volume, descending, to identify reference objects
@@ -202,9 +210,9 @@ def find_neighbours(session, ref_id, ordered_objs,T=2):
     candidates = list(ordered_objs.keys())[i+1:] #candidate figure objects, i.e., smaller
     # Which ones are nearby?
     tmp_conn, tmp_cur = session
-    tmp_cur.execute('SELECT object_id FROM single_snap'\
+    tmp_cur.execute('SELECT object_id FROM semantic_map'\
                     ' WHERE ST_3DDWithin(bbox, '\
-                    '(SELECT bbox FROM single_snap '\
+                    '(SELECT bbox FROM semantic_map '\
                     'WHERE object_id = %s), %s) '\
                     'AND object_id != %s', (ref_id,str(T),ref_id))
 
@@ -229,7 +237,7 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
 		                ' ST_3DIntersects(fig.bbox,reff.fronthsproj), ST_3DIntersects(fig.bbox,reff.backhsproj),'\
 		                ' St_Volume(ST_3DIntersection(ST_Scale(ST_3DIntersection(fig.bbox,reff.bbox),1.00001,1.00001,1.00001), fig.bbox)),'\
 		                ' St_Volume(ST_3DIntersection(ST_Scale(ST_3DIntersection(fig.bbox,reff.bbox),1.00001,1.00001,1.00001), reff.bbox))'\
-                        ' from single_snap as reff, single_snap as fig'\
+                        ' from semantic_map as reff, semantic_map as fig'\
                         ' WHERE reff.object_id = %s'\
                         ' AND fig.object_id = %s', (ref_id,figure_id))
         #Unpack results and infer QSR predicates
@@ -271,7 +279,7 @@ def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, ht=0.5):
     tmp_conn, tmp_cur = session
     # Use postGIS for deriving truth values of base operators
     tmp_cur.execute("""SELECT ST_Zmin(bbox)
-                    FROM single_snap
+                    FROM semantic_map
                     WHERE object_id = %s
                     """,(obj_id,))
     # Unpack results and infer QSR predicates
@@ -286,7 +294,7 @@ def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, ht=0.5):
 
     for wall_id in wall_list: #for all walls in map
         tmp_cur.execute("""SELECT ST_3DDistance(obj.bbox,w.surface)
-                           FROM single_snap as obj, walls as w
+                           FROM semantic_map as obj, walls as w
                            WHERE obj.object_id = %s
                            AND w.id = %s
                             """, (obj_id,wall_id))

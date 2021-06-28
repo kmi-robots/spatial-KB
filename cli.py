@@ -44,12 +44,7 @@ def main():
     spatialDB.db_session()
     print("Took % fseconds." % float(time.time() - start))
 
-    reasoner = ObjectReasoner(args)
-
-    #TODO exclude crops without depth data associated , i.e., if obj polyhedral surface or projection2d is null
-    # the starting set should have 1414 object regions/crops
-    # + black listing
-    # blacklist = ['246928_6','655068_5','655068_6']
+    reasoner = ObjectReasoner(args,spatialDB.ids_tbprocessed)
 
     # Nfold stratified cross-validation for test results
     # subsample test set to devote a small portion to param tuning

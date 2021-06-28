@@ -15,7 +15,7 @@ from utils import graphs as ugr
 
 
 class ObjectReasoner():
-    def __init__(self, args):
+    def __init__(self, args,idlist):
         with open(os.path.join(args.path_to_pred, 'test-labels.txt')) as txtf, \
                 open(os.path.join(args.path_to_pred, 'class_to_index.json')) as cin, \
                 open(os.path.join(args.path_to_pred, 'class_to_synset.json')) as sin, \
@@ -28,6 +28,15 @@ class ObjectReasoner():
                                    allow_pickle=True)
         self.remapper = dict((v, k) for k, v in self.mapper.items())  # swap keys with indices
         self.scenario = args.scenario
+        self.filter_nulls(idlist)
+
+    def filter_nulls(self,idlist):
+        """remove filenames, labels and predictions which had been filtered from spatial DB
+        """
+        indices = [k for k,f in enumerate(self.fnames) if f in idlist]
+        self.fnames = [self.fnames[i] for i in indices]
+        self.labels = [self.labels[i] for i in indices]
+        self.predictions = self.predictions[indices]
 
     def run(self, eval_dictionary, spatialDB):
         """Similarly to the proposed size reasoner, we go image by image and find the ref-figure set,
@@ -46,15 +55,15 @@ class ObjectReasoner():
         for fname in self.fnames:
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
+                tstamp = '2020-05-15-11-02-54_646'  # TODO remove when running on full set
                 QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
                 QSRs.add_nodes_from(img_ids.keys())
-                lmapping =dict((o_id, str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
+                lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
                 lmapping['floor'] ='floor'
                 lmapping['wall'] ='wall'
                 for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
-
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
                     if len(figure_objs)>0: #, if any
                         #Find base QSRs between figure and nearby ref
@@ -122,8 +131,8 @@ class ObjectReasoner():
                 sub_syn = self.taxonomy[pred_label]
                 all_spatial_scores = []
                 for _,ref,r in fig_qsrs: #for each QSR where obj is figure, i.e., subject
-                    if ref=='wall': obj_syn ='wall.n.01' #cases where reference is wall or floor
-                    elif ref=='floor': obj_syn ='floor.n.01'
+                    if ref=='wall': obj_syn = 'wall.n.01' #cases where reference is wall or floor
+                    elif ref=='floor': obj_syn = 'floor.n.01'
                     else: obj_syn = self.taxonomy[ref]
                     if len(obj_syn)>1: # more than one synset
                         typscores =[self.compute_typicality_score(spatialDB,sub_syn,osyn,r) for osyn in obj_syn]
@@ -131,8 +140,7 @@ class ObjectReasoner():
                                                                        # in order of taxonomy (from preferred synset to least preferred)
                         if len(typscores) == 0:
                             typscore = 0.
-                        else:
-                            typscore = typscores[0]  # first one in the order
+                        else: typscore = typscores[0]  # first one in the order
                     else: typscore = self.compute_typicality_score(spatialDB,sub_syn,obj_syn,r)
                     all_spatial_scores.append((1. - typscore))  #track INVERSE of score (so that it is comparable
                                                                 # with L2 distances, i.e., scores that are minimised)
