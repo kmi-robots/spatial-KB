@@ -8,6 +8,10 @@ def generate_html_viz(dbobj,timestamp):
                                 'FROM semantic_map '
                                 'WHERE object_id LIKE %s;',(timestamp+'%',))
     qres =dbobj.cursor.fetchall()
+
+    dbobj.cursor.execute('SELECT ST_AsX3D(surface) from walls')
+    qwalls = dbobj.cursor.fetchall()
+
     tgtp= os.path.join(os.environ['HOME'], 'hsdump_filtered.html')
     with open(tgtp, 'w') as outd:
         rpos = " ".join([str(coord) for coord in qres[-1][-3:]]) #robot coords for given timestamp/image
@@ -17,8 +21,12 @@ def generate_html_viz(dbobj,timestamp):
                     <x3d xmlns="http://www.x3dom.org/x3dom" showStat="false" showLog="false" x="0px" y="0px" width="1920px" height="1080px"><scene>\
                     <viewpoint position="0 0 10"></viewpoint>' + '\n' ) # sample viewpoint was 0 0 10
         #robot viewpoint (in gray)
-        outd.write(('<Transform translation="%s">\
-        <Shape><Sphere radius=".02"/><Appearance USE="DARK_GRAY"/></Shape></Transform> ' + '\n')% rpos)
+        # outd.write(('<Transform translation="%s">\
+        # <Shape><Sphere radius=".02"/><Appearance USE="DARK_GRAY"/></Shape></Transform> ' + '\n')% rpos)
+
+        #0,0,0 origin of postgis coord system
+        outd.write('<Transform translation="0 0 0">\
+                <Shape><Sphere radius="1.0"/><Appearance USE="DARK_GRAY"/></Shape></Transform> ' + '\n')
 
         for i,r in enumerate(qres):
             # bbox is black (default)
@@ -55,6 +63,13 @@ def generate_html_viz(dbobj,timestamp):
                 #     # outd.write('<shape><appearance><material emissiveColor="0. 1.0 0."></material></appearance>' + '\n')
                 #     # outd.write(r[7].replace('FaceSet', 'LineSet') + '\n')
                 #     # outd.write('</shape>' + '\n')
+
+        #draw walls
+        # for w in qwalls:
+        #     outd.write('<shape><appearance><material></material></appearance>' + '\n')
+        #     outd.write(w[0] +'\n')
+        #     outd.write('</shape>' + '\n')
+
         # closing nodes
         outd.write('<shape><plane></plane></shape></scene></x3d></body></html>')
     print("HTML report of 3D boxes created under %s" % tgtp)

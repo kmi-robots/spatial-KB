@@ -3,16 +3,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def plot_graph(G):
+    #G = nx.subgraph(G, ["0_radiator", "wall", "floor"]) #for debugging: look at node subset
     pos = nx.spring_layout(G)
     nx.draw(G,pos,connectionstyle='arc3, rad = 0.1',with_labels=True)
-    #nx.draw_networkx_edges(G,pos,connectionstyle='arc3, rad = 0.1')
-    #node_labels = nx.get_node_attributes(G, 'name')
-    #nx.draw_networkx_labels(G, pos=pos, labels=node_labels)
     edge_labels = nx.get_edge_attributes(G, 'QSR')
-    #modified built-in method in nx because it needs unique keys, i.e., fails for multi-graph
-    draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-    #edge_labels = nx.get_edge_attributes(G, 'ext')
-    #draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
+    # Uncomment below for debugging: look at only a subset of QSRs, e.g., leansOn, affixedON
+    #edge_labels = {(u,v,i): d for (u,v,i), d in nx.get_edge_attributes(G, 'QSR').items() if d in ['leansOn','affixedOn']}
+    draw_networkx_edge_labels(G, pos, edge_labels=edge_labels) #modified built-in method in nx below, because it needs unique keys, i.e., fails for multi-graph
     plt.draw()
     plt.show()
 

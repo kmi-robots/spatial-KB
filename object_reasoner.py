@@ -63,18 +63,19 @@ class ObjectReasoner():
                 lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
                 lmapping['floor'] ='floor'
                 lmapping['wall'] ='wall'
+
                 for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
                     if len(figure_objs)>0: #, if any
                         #Find base QSRs between figure and nearby ref
                         QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
-                        QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs)
+                    QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs) # in any case, alwayes extract relations with walls and floor
 
                 # after all references in image have been examined
                 # derive special cases of ON
-                QSRs = infer_special_ON(QSRs)
-                QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
-                ugr.plot_graph(QSRs_H)
+                QSRs = infer_special_ON(QSRs,lmapping)
+                #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
+                #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
 
                 # which ML predictions to correct in that image?
                 if self.scenario =='best':

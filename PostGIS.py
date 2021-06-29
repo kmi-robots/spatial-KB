@@ -189,8 +189,8 @@ def create_boxes(dbobj, sf=1.2):
         dbobj.connection.commit()
     """Just for debugging/ visualize the 3D geometries we have just constructed"""
     # return XML representation for 3D web visualizer
-    tstamp = '2020-05-15-11-02-54_646'  # TODO remove when running on full set
-    generate_html_viz(dbobj,tstamp)
+    #tstamp = '2020-05-15-11-02-54_646'  # remove when running on full set
+    #generate_html_viz(dbobj,tstamp)
     return tbprocessed
 
 def retrieve_ids_ord(session,timestamp):
@@ -270,11 +270,13 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     return qsr_graph
 
 
-def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, ht=0.5):
+def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.02, wht=0.15):
     """Extract QSRs through PostGIS
     between current object and surfaces marked as wall/floor
-    ht: threshold to find objects that are at floor height, i.e., min Z coordinate = 0
-    or near wall surfaces
+    fht: threshold to find objects that are at floor height, i.e., min Z coordinate = 0
+    wht: for near wall surfaces - e.g., by default 15 cm
+    motivation for threshold: granularity of map/GUI for wall annotation requires tolerance
+    + account that walls are modelled 2D surfaces without depth in the GIS db, i.e., needs higher value than fht
     """
     tmp_conn, tmp_cur = session
     # Use postGIS for deriving truth values of base operators
@@ -284,7 +286,7 @@ def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, ht=0.5):
                     """,(obj_id,))
     # Unpack results and infer QSR predicates
     res = tmp_cur.fetchone()[0]
-    if res <= ht:
+    if res <= fht:
         qsr_graph.add_edge(obj_id, 'floor', QSR='touches')
         qsr_graph.add_edge(obj_id, 'floor', QSR='above')
         qsr_graph.add_edge(obj_id, 'floor', QSR='onTopOf')
@@ -299,9 +301,9 @@ def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, ht=0.5):
                            AND w.id = %s
                             """, (obj_id,wall_id))
         res = tmp_cur.fetchone()[0]
-        if res <= ht:
+        if res <= wht:
             qsr_graph.add_edge(obj_id, 'wall', QSR='touches')
-            qsr_graph.add_edge('wall', obj_id, QSR='touches') #also add relation in opposite direction
+            #qsr_graph.add_edge('wall', obj_id, QSR='touches') #also add relation in opposite direction
     return qsr_graph
 
 
@@ -311,11 +313,13 @@ def retrieve_walls(cursor):
     return cursor.fetchall()
 
 
-def infer_special_ON(local_graph):
+def infer_special_ON(local_graph,lmapping):
     """Iterates only over QSRs in current image
-    but propagates new QSRs found to global graph"""
+    but propagates new QSRs found to global graph
+    expects label mapping in human-readable form as input"""
     for node1 in local_graph.nodes():
         # if obj1 touches or is touched by obj2
+        #cobj = lmapping[node1]
         t = [(f,ref,r) for f,ref,r in local_graph.out_edges(node1, data=True) if r['QSR'] =='touches']
         is_t = [(f,ref,r) for f,ref,r in local_graph.in_edges(node1, data=True) if r['QSR'] =='touches']
         is_a = [f for f,_,r in local_graph.in_edges(node1, data=True) if r['QSR']=='below'] #edges where obj1 is reference and figure objects are below it
@@ -337,7 +341,6 @@ def infer_special_ON(local_graph):
                      local_graph.get_edge_data(node1, node2, k)['QSR'] == 'above']
                 lb = [k for k in local_graph.get_edge_data(node1, node2) if
                      local_graph.get_edge_data(node1, node2, k)['QSR'] == 'below']
-                if len(l)==0 and lb==0 \
-                        and len(others_below)>0: #and there is at least an o3 different from o2 which is below o1
+                if len(l)==0 and len(lb)==0 and len(others_below)>0: #and there is at least an o3 different from o2 which is below o1
                     local_graph.add_edge(node1, node2, QSR='leansOn') # then o1 leans on o2
     return local_graph
