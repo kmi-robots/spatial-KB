@@ -37,6 +37,8 @@ class ObjectReasoner():
         self.fnames = [self.fnames[i] for i in indices]
         self.labels = [self.labels[i] for i in indices]
         self.predictions = self.predictions[indices]
+        self.fnames_full = self.fnames #these full lists will not be subsampled in crossval, i.e., used to extract all QSRs nonetheless
+        self.labels_full = self.labels
 
     def run(self, eval_dictionary, spatialDB):
         """Similarly to the proposed size reasoner, we go image by image and find the ref-figure set,
@@ -55,14 +57,27 @@ class ObjectReasoner():
         for fname in self.fnames:
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
+                # for debugging only: visualize img
+                print("============================================")
+                print("Processing img %s" % tstamp)
+                import cv2
+                cv2.imshow('win', cv2.imread(os.path.join('/home/agnese/bags/KMi-set-new/' \
+                                                          'test/rgb', tstamp + '.jpg')))
+                cv2.waitKey(1000)
+                cv2.destroyAllWindows()
+
+                #QSRs are extracted for all img regions (self.fnames_full, self.labels_full)
                 QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
+                img_ids = OrderedDict({key_:vol for key_,vol in img_ids.items() if key_ in self.fnames_full})#exclude those that were filtered as null
+                subids = [self.fnames.index(key_) for key_ in img_ids.keys() if key_ in self.fnames]
+                subimg_ids = OrderedDict({key_: vol for key_, vol in img_ids.items() if
+                                          key_ in self.fnames})  # subsampled list to use for correction later#
                 QSRs.add_nodes_from(img_ids.keys())
-                lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
+                lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels_full[self.fnames_full.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
                 lmapping['floor'] = 'floor'
                 lmapping['wall'] = 'wall'
-
                 for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
                     if len(figure_objs)>0: #, if any
@@ -77,12 +92,13 @@ class ObjectReasoner():
                 #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
 
                 # which ML predictions to correct in that image?
+                # Correction is applied only for img regions in subsampled fold (self.fnames, self.labels)
                 if self.scenario =='best':
                     #correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
-                    tbcorr = [id_ for id_ in img_ids if self.labels[self.fnames.index(id_)] != \
+                    tbcorr = [id_ for id_ in subimg_ids if self.labels[self.fnames.index(id_)] != \
                               self.predictions[self.fnames.index(id_),0,0]]
                 elif self.scenario == 'selected': # select for correction, based on confidence
-                    tbcorr = [id_ for id_ in img_ids if self.predictions[self.fnames.index(id_), 0, 1] \
+                    tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
                               >= self.epsilon_set[0]] #where L2 distance greater than conf thresh
                 else: tbcorr = img_ids #validate all
 
@@ -111,7 +127,6 @@ class ObjectReasoner():
             i = self.fnames.index(oid)
             ML_rank = self.predictions[i, :]
             hybrid_rank = np.copy(ML_rank)
-            print("============================================")
             print("%s mistaken for a %s" % (self.remapper[self.labels[i]],self.remapper[ML_rank[0][0]]))
 
             print("Top-5 before correction: ")
@@ -126,9 +141,9 @@ class ObjectReasoner():
                     #add up 1. as if not found to not alter ML ranking and skip
                     hybrid_rank[n][1] += 1.
                     continue
-                fig_qsrs = [(pred_label,self.remapper[self.labels[self.fnames.index(ref)]],r['QSR'])
+                fig_qsrs = [(pred_label,self.remapper[self.labels_full[self.fnames_full.index(ref)]],r['QSR'])
                         for f,ref,r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall','floor']] #rels where obj is figure
-                ref_qsrs = [(self.remapper[self.labels[self.fnames.index(f)]],pred_label,r['QSR'])
+                ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]],pred_label,r['QSR'])
                         for f,ref,r in qsr_graph.in_edges(oid, data=True) if f not in ['wall','floor']] # rels where obj is reference
 
                 #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf floor'
@@ -189,6 +204,9 @@ class ObjectReasoner():
             print(read_phoc_rank[:5])  # posthoc rank in human readable form
             # replace predictions at that index with corrected predictions
             self.predictions[i, :] = posthoc_rank
+            if read_phoc_rank[0][0] != read_current_rank[0][0]:
+                print("something changed after spatial reasoning")
+                continue
 
     def compute_typicality_score(self,spatialDB,sub_syn,obj_syn,rel, use_beside=False, use_near=False):
         #no of times the two appeared in that relation in VG

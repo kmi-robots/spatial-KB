@@ -288,7 +288,7 @@ def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.02, wht=0.1
     res = tmp_cur.fetchone()[0]
     if res <= fht:
         qsr_graph.add_edge(obj_id, 'floor', QSR='touches')
-        #qsr_graph.add_edge(obj_id, 'floor', QSR='above')
+        #2020-05-15-11-24-12_379522_poly9 qsr_graph.add_edge(obj_id, 'floor', QSR='above')
         qsr_graph.add_edge(obj_id, 'floor', QSR='onTopOf')
         #also add relations in opposite direction #this is only to infer special ON cases later
         qsr_graph.add_edge('floor', obj_id, QSR='touches')
