@@ -55,14 +55,13 @@ class ObjectReasoner():
         for fname in self.fnames:
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                tstamp = '2020-05-15-11-02-54_646'  # TODO remove when running on full set
                 QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
                 QSRs.add_nodes_from(img_ids.keys())
                 lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels[self.fnames.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
-                lmapping['floor'] ='floor'
-                lmapping['wall'] ='wall'
+                lmapping['floor'] = 'floor'
+                lmapping['wall'] = 'wall'
 
                 for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
@@ -81,7 +80,7 @@ class ObjectReasoner():
                 if self.scenario =='best':
                     #correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
                     tbcorr = [id_ for id_ in img_ids if self.labels[self.fnames.index(id_)] != \
-                              self.predictions[self.fnames.index(id_),0,0] ]
+                              self.predictions[self.fnames.index(id_),0,0]]
                 elif self.scenario == 'selected': # select for correction, based on confidence
                     tbcorr = [id_ for id_ in img_ids if self.predictions[self.fnames.index(id_), 0, 1] \
                               >= self.epsilon_set[0]] #where L2 distance greater than conf thresh
@@ -106,19 +105,27 @@ class ObjectReasoner():
         eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial_VG', K=5)
         return eval_dictionary
 
-    def space_validate(self,obj_list,qsr_graph,spatialDB, K=10):
+    def space_validate(self,obj_list,qsr_graph,spatialDB):
         # correction independent from the order objects in each img are picked, order of ML ranking and then combine topK scores
-
         for oid in obj_list: #for each object to correct/validate
             i = self.fnames.index(oid)
             ML_rank = self.predictions[i, :]
-            hybrid_rank_atK = np.copy(ML_rank[:K])
-            for n, (cnum, L2dis) in enumerate(ML_rank[:K]): #for each class in the top-K rank
+            hybrid_rank = np.copy(ML_rank)
+            print("============================================")
+            print("%s mistaken for a %s" % (self.remapper[self.labels[i]],self.remapper[ML_rank[0][0]]))
+
+            print("Top-5 before correction: ")
+            read_current_rank = [(self.remapper[ML_rank[z, 0]], ML_rank[z, 1]) for z in
+                                 range(ML_rank.shape[0])]
+            print(read_current_rank[:5]) #ML rank in human readable form
+
+            for n, (cnum, L2dis) in enumerate(ML_rank): #for each class in the ML rank
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
-                if not wn_syn: continue  # skip objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
-
-                # retrieve QSRs for that object
+                if not wn_syn: #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
+                    #add up 1. as if not found to not alter ML ranking and skip
+                    hybrid_rank[n][1] += 1.
+                    continue
                 fig_qsrs = [(pred_label,self.remapper[self.labels[self.fnames.index(ref)]],r['QSR'])
                         for f,ref,r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall','floor']] #rels where obj is figure
                 ref_qsrs = [(self.remapper[self.labels[self.fnames.index(f)]],pred_label,r['QSR'])
@@ -135,13 +142,18 @@ class ObjectReasoner():
                     if ref=='wall': obj_syn = 'wall.n.01' #cases where reference is wall or floor
                     elif ref=='floor': obj_syn = 'floor.n.01'
                     else: obj_syn = self.taxonomy[ref]
+
+                    if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
+                    elif r == 'leansOn' or r == 'affixedOn': r = 'against'  # mapping on VG predicate
+
                     if len(obj_syn)>1: # more than one synset
                         typscores =[self.compute_typicality_score(spatialDB,sub_syn,osyn,r) for osyn in obj_syn]
                         typscores = [s for s in typscores if s != 0.]  # keep only synset that of no-null typicality
                                                                        # in order of taxonomy (from preferred synset to least preferred)
                         if len(typscores) == 0:
                             typscore = 0.
-                        else: typscore = typscores[0]  # first one in the order
+                        else: typscore = typscores[0][0]  # first one in the order
+
                     else: typscore = self.compute_typicality_score(spatialDB,sub_syn,obj_syn,r)
                     all_spatial_scores.append((1. - typscore))  #track INVERSE of score (so that it is comparable
                                                                 # with L2 distances, i.e., scores that are minimised)
@@ -150,6 +162,9 @@ class ObjectReasoner():
                 obj_syn = self.taxonomy[pred_label]
                 for fig,_,r in ref_qsrs:
                     sub_syn = self.taxonomy[fig]
+                    if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
+                    elif r =='leansOn' or r=='affixedOn': r = 'against' #mapping on VG predicate
+
                     if len(obj_syn) > 1:
                         typscores = [self.compute_typicality_score(spatialDB, ssyn, obj_syn, r) for ssyn in sub_syn]
                         typscores = [s for s in typscores if s!= 0.] # keep only synset that of no-null typicality in order of taxonomy (from preferred synset to least preferred)
@@ -160,32 +175,55 @@ class ObjectReasoner():
 
                 # Average across all QSRs
                 avg_spatial_score = statistics.mean(all_spatial_scores)
-                hybrid_rank_atK[n][1] += avg_spatial_score # add up to ML score
+                hybrid_rank[n][1] += avg_spatial_score # add up to ML score
 
-            # Normalise scores across the topK classes, so it is between 0 and 1
+            # Normalise scores across classes, so it is between 0 and 1
             # minmax norm
-            scores = hybrid_rank_atK[:,1]
+            scores = hybrid_rank[:,1]
             min_, max_ = np.min(scores), np.max(scores)
-            hybrid_rank_atK[:, 1] = np.array([(x-min_)/(max_ - min_) for x in scores])
-            posthoc_rank = hybrid_rank_atK[np.argsort(hybrid_rank_atK[:, 1])] # order by score ascending
+            hybrid_rank[:, 1] = np.array([(x-min_)/(max_ - min_) for x in scores])
+            posthoc_rank = hybrid_rank[np.argsort(hybrid_rank[:, 1])] # order by score ascending
             # ranking after correction is ..
+            print("Top-5 after correction: ")
+            read_phoc_rank = [(self.remapper[posthoc_rank[z, 0]], posthoc_rank[z, 1]) for z in range(posthoc_rank.shape[0])]
+            print(read_phoc_rank[:5])  # posthoc rank in human readable form
             # replace predictions at that index with corrected predictions
             self.predictions[i, :] = posthoc_rank
 
-    def compute_typicality_score(self,spatialDB,sub_syn,obj_syn,rel):
+    def compute_typicality_score(self,spatialDB,sub_syn,obj_syn,rel, use_beside=False, use_near=False):
         #no of times the two appeared in that relation in VG
         try:
             nom = float(spatialDB.KB.VG_stats['predicates'][rel]['relations'][str((str(sub_syn), str(obj_syn)))])
         except KeyError: #if any hit is found
-            return 0.
+            if rel !='above':
+                if rel =='leftOn' or rel=='rightOf': #check also hits for (more generic) beside predicate
+                    try:
+                        nom = float(spatialDB.KB.VG_stats['predicates']['beside']['relations'][str((str(sub_syn), str(obj_syn)))])
+                        use_beside = True
+                    except KeyError:
+                        return 0.
+                else: #check also hits for (more generic) near predicate
+                    try:
+                        nom = float(spatialDB.KB.VG_stats['predicates']['near']['relations'][str((str(sub_syn), str(obj_syn)))])
+                        use_near = True
+                    except KeyError:
+                        return 0.
         #no of times sub_syn was subject of r relation in VG
         try:
-            denom1 = float(spatialDB.KB.VG_stats['subjects'][rel][sub_syn])
+            if use_near:
+                denom1 = float(spatialDB.KB.VG_stats['subjects']['near'][sub_syn])
+            elif use_beside:
+                denom1 = float(spatialDB.KB.VG_stats['subjects']['beside'][sub_syn])
+            else: denom1 = float(spatialDB.KB.VG_stats['subjects'][rel][sub_syn])
         except KeyError: #if any hit is found
             return 0.
         #no of times obj_syn was object of r relation in VG
         try:
-            denom2 = float(spatialDB.KB.VG_stats['objects'][rel][obj_syn])
+            if use_near:
+                denom2 = float(spatialDB.KB.VG_stats['objects']['near'][obj_syn])
+            elif use_beside:
+                denom2 = float(spatialDB.KB.VG_stats['objects']['beside'][obj_syn])
+            else: denom2 = float(spatialDB.KB.VG_stats['objects'][rel][obj_syn])
         except KeyError: #if any hit is found
             return 0.
         return nom / (denom1+denom2)
