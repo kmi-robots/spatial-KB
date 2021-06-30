@@ -4,7 +4,7 @@ def generate_html_viz(dbobj,timestamp):
     dbobj.cursor.execute('SELECT ST_AsX3D(bbox), ST_AsX3D(cbb), ST_AsX3D(tophsproj),'
                                 'ST_AsX3D(bottomhsproj),ST_AsX3D(lefthsproj),ST_AsX3D(righthsproj),'
                                 'ST_AsX3D(fronthsproj),ST_AsX3D(backhsproj), ST_X(robot_position),'
-                                'ST_Y(robot_position), ST_Z(robot_position)  '
+                                'ST_Y(robot_position), ST_Z(robot_position), ST_AsX3D(object_polyhedral_surface)  '
                                 'FROM semantic_map '
                                 'WHERE object_id LIKE %s;',(timestamp+'%',))
     qres =dbobj.cursor.fetchall()
@@ -63,12 +63,15 @@ def generate_html_viz(dbobj,timestamp):
                 #     # outd.write('<shape><appearance><material emissiveColor="0. 1.0 0."></material></appearance>' + '\n')
                 #     # outd.write(r[7].replace('FaceSet', 'LineSet') + '\n')
                 #     # outd.write('</shape>' + '\n')
-
+                #show convex hull
+                outd.write('<shape><appearance><material emissiveColor="1.0 0. 0.0"></material></appearance>' + '\n')
+                outd.write(r[-1] + '\n')
+                outd.write('</shape>' + '\n')
         #draw walls
-        # for w in qwalls:
-        #     outd.write('<shape><appearance><material></material></appearance>' + '\n')
-        #     outd.write(w[0] +'\n')
-        #     outd.write('</shape>' + '\n')
+        for w in qwalls:
+            outd.write('<shape><appearance><material></material></appearance>' + '\n')
+            outd.write(w[0] +'\n')
+            outd.write('</shape>' + '\n')
 
         # closing nodes
         outd.write('<shape><plane></plane></shape></scene></x3d></body></html>')

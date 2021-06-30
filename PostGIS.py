@@ -189,16 +189,16 @@ def create_boxes(dbobj, sf=1.2):
         dbobj.connection.commit()
     """Just for debugging/ visualize the 3D geometries we have just constructed"""
     # return XML representation for 3D web visualizer
-    #tstamp = '2020-05-15-11-02-54_646'  # remove when running on full set
+    #tstamp = '2020-05-15-11-10-41_701203' #'2020-05-15-11-24-12_379522'  # remove when running on full set
     #generate_html_viz(dbobj,tstamp)
     return tbprocessed
 
-def retrieve_ids_ord(session,timestamp):
-
+def retrieve_ids_ord(session,timestamp, vthresh= 10.):
+    #now we also filter objects with volume above 10 m3 (clear outliers)
     tmp_conn, tmp_cur = session
     tmp_cur.execute('SELECT object_id, ST_Volume(bbox) as v FROM semantic_map '\
-                    'WHERE object_id LIKE %s '\
-                    'ORDER BY v DESC', (timestamp+'%',)) #use string pattern matching to check only first part of ID
+                    'WHERE object_id LIKE %s AND ST_Volume(bbox) <= %s'\
+                    'ORDER BY v DESC', (timestamp+'%',vthresh)) #use string pattern matching to check only first part of ID
     # & order objects by volume, descending, to identify reference objects
     res = tmp_cur.fetchall()
     return OrderedDict(res) #preserve ordering in dict #{k[0]: {} for k in res}  # init with obj ids
@@ -270,7 +270,7 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     return qsr_graph
 
 
-def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.02, wht=0.15):
+def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.10, wht=0.15):
     """Extract QSRs through PostGIS
     between current object and surfaces marked as wall/floor
     fht: threshold to find objects that are at floor height, i.e., min Z coordinate = 0
@@ -313,7 +313,7 @@ def retrieve_walls(cursor):
     return cursor.fetchall()
 
 
-def infer_special_ON(local_graph,lmapping):
+def infer_special_ON(local_graph):
     """Iterates only over QSRs in current image
     but propagates new QSRs found to global graph
     expects label mapping in human-readable form as input"""

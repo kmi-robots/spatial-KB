@@ -11,6 +11,7 @@ import statistics
 import networkx as nx
 from evalscript import eval_singlemodel
 from PostGIS import *
+import itertools
 from utils import graphs as ugr
 
 
@@ -57,9 +58,10 @@ class ObjectReasoner():
         for fname in self.fnames:
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                # for debugging only: visualize img
+                tstamp = '2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
                 print("============================================")
                 print("Processing img %s" % tstamp)
+                # for debugging only: visualize img
                 import cv2
                 cv2.imshow('win', cv2.imread(os.path.join('/home/agnese/bags/KMi-set-new/' \
                                                           'test/rgb', tstamp + '.jpg')))
@@ -75,11 +77,15 @@ class ObjectReasoner():
                 subimg_ids = OrderedDict({key_: vol for key_, vol in img_ids.items() if
                                           key_ in self.fnames})  # subsampled list to use for correction later#
                 QSRs.add_nodes_from(img_ids.keys())
-                lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels_full[self.fnames_full.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
-                lmapping['floor'] = 'floor'
-                lmapping['wall'] = 'wall'
+                #lmapping uses gtruth labels but it is just for visualization purposes
+                #lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels_full[self.fnames_full.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
+                #lmapping['floor'] = 'floor'
+                #lmapping['wall'] = 'wall'
                 for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
                     figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
+                    #cobj = lmapping[o_id]
+                    #if cobj == '8_backpack':
+                        #QSRs = nx.MultiDiGraph()
                     if len(figure_objs)>0: #, if any
                         #Find base QSRs between figure and nearby ref
                         QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
@@ -87,7 +93,7 @@ class ObjectReasoner():
 
                 # after all references in image have been examined
                 # derive special cases of ON
-                QSRs = infer_special_ON(QSRs,lmapping)
+                QSRs = infer_special_ON(QSRs)
                 #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
                 #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
 
@@ -122,7 +128,7 @@ class ObjectReasoner():
         return eval_dictionary
 
     def space_validate(self,obj_list,qsr_graph,spatialDB):
-        # correction independent from the order objects in each img are picked, order of ML ranking and then combine topK scores
+        #
         for oid in obj_list: #for each object to correct/validate
             i = self.fnames.index(oid)
             ML_rank = self.predictions[i, :]
@@ -137,10 +143,12 @@ class ObjectReasoner():
             for n, (cnum, L2dis) in enumerate(ML_rank): #for each class in the ML rank
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
-                if not wn_syn: #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
+                if not wn_syn or pred_label =='person': #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
+                                                        # we skip people as they are mobile and can be anywhere, space is not discriminating
                     #add up 1. as if not found to not alter ML ranking and skip
                     hybrid_rank[n][1] += 1.
                     continue
+                #TODO replace self.labels_full below with predicted labels in further eval to check whether QSRs without ground truth can help
                 fig_qsrs = [(pred_label,self.remapper[self.labels_full[self.fnames_full.index(ref)]],r['QSR'])
                         for f,ref,r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall','floor']] #rels where obj is figure
                 ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]],pred_label,r['QSR'])
@@ -161,8 +169,16 @@ class ObjectReasoner():
                     if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
                     elif r == 'leansOn' or r == 'affixedOn': r = 'against'  # mapping on VG predicate
 
-                    if len(obj_syn)>1: # more than one synset
-                        typscores =[self.compute_typicality_score(spatialDB,sub_syn,osyn,r) for osyn in obj_syn]
+                    if len(sub_syn)>1 or len(obj_syn)>1:
+                        if len(sub_syn)>1 and len(obj_syn)>1: #try all sub,obj ordered combos
+                            print(list(itertools.product(sub_syn, obj_syn)))
+                            typscores = [self.compute_typicality_score(spatialDB, sub_s, obj_s, r) \
+                                         for sub_s, obj_s in list(itertools.product(sub_syn, obj_syn))]
+                        elif len(sub_syn)==1 and len(obj_syn)>1:
+                            typscores =[self.compute_typicality_score(spatialDB,sub_syn,osyn,r) for osyn in obj_syn]
+                        elif len(sub_syn)> 1 and len(obj_syn)==1:
+                            typscores = [self.compute_typicality_score(spatialDB, subs, obj_syn, r) for subs in sub_syn]
+
                         typscores = [s for s in typscores if s != 0.]  # keep only synset that of no-null typicality
                                                                        # in order of taxonomy (from preferred synset to least preferred)
                         if len(typscores) == 0:
