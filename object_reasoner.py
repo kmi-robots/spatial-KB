@@ -59,7 +59,7 @@ class ObjectReasoner():
 
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                #tstamp = '2020-05-15-11-07-02_432115' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
+                #tstamp = '2020-05-15-11-13-38_805787' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
                 print("============================================")
                 print("Processing img %s" % tstamp)
                 # for debugging only: visualize img
@@ -147,21 +147,25 @@ class ObjectReasoner():
             for n, (cnum, L2dis) in enumerate(ML_rank): #for each class in the ML rank
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
-                if not wn_syn or pred_label =='person': #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
-                                                        # we skip people as they are mobile and can be anywhere, space is not discriminating
-                    #add up 1. as if not found to not alter ML ranking and skip
-                    hybrid_rank[n][1] += 1.
-                    continue
+
                 #TODO replace self.labels_full below with predicted labels in further eval to check whether QSRs without ground truth can help
                 fig_qsrs = [(pred_label,self.remapper[self.labels_full[self.fnames_full.index(ref)]],r['QSR'])
                         for f,ref,r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall','floor']] #rels where obj is figure
                 ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]],pred_label,r['QSR'])
                         for f,ref,r in qsr_graph.in_edges(oid, data=True) if f not in ['wall','floor']] # rels where obj is reference
 
-                #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf floor'
+                #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf
                 surface_qsrs = [(pred_label,ref,r['QSR']) for f,ref,r \
-                                in qsr_graph.out_edges(oid, data=True) if ref in ['wall','floor']]
+                                in qsr_graph.out_edges(oid, data=True) if ref in ['wall','floor']] #only those in fig/ref form
                 fig_qsrs.extend(surface_qsrs) # merge into list of fig/ref relations
+
+                if not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0): #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
+                    # we skip people as they are mobile and can be anywhere, space is not discriminating
+                    # OR there are no QSRs to consider
+                    #add up 1. as if not found to not alter ML ranking and skip
+                    hybrid_rank[n][1] += 1.
+                    continue
+
                 #Tipicality scores based on VG stats
                 sub_syn = self.taxonomy[pred_label]
                 all_spatial_scores = []

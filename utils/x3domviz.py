@@ -1,7 +1,7 @@
 import os
 
 def generate_html_viz(dbobj,timestamp):
-    dbobj.cursor.execute('SELECT ST_AsX3D(bbox), ST_AsX3D(cbb), ST_AsX3D(tophsproj),'
+    dbobj.cursor.execute('SELECT object_id, ST_AsX3D(bbox), ST_AsX3D(cbb), ST_AsX3D(tophsproj),'
                                 'ST_AsX3D(bottomhsproj),ST_AsX3D(lefthsproj),ST_AsX3D(righthsproj),'
                                 'ST_AsX3D(fronthsproj),ST_AsX3D(backhsproj), ST_X(robot_position),'
                                 'ST_Y(robot_position), ST_Z(robot_position), ST_AsX3D(object_polyhedral_surface)  '
@@ -14,7 +14,7 @@ def generate_html_viz(dbobj,timestamp):
 
     tgtp= os.path.join(os.environ['HOME'], 'hsdump_filtered.html')
     with open(tgtp, 'w') as outd:
-        rpos = " ".join([str(coord) for coord in qres[-1][-3:]]) #robot coords for given timestamp/image
+        rpos = " ".join([str(coord) for coord in qres[-2][-3:]]) #robot coords for given timestamp/image
         # Write html heading
         outd.write('<!DOCTYPE html><html><head><meta encoding="utf-8"><script src="http://www.x3dom.org/download/dev/x3dom.js"></script><link rel="stylesheet" '
             'href="http://www.x3dom.org/download/dev/x3dom.css"></head><body>\
@@ -25,43 +25,43 @@ def generate_html_viz(dbobj,timestamp):
         # <Shape><Sphere radius=".02"/><Appearance USE="DARK_GRAY"/></Shape></Transform> ' + '\n')% rpos)
 
         #0,0,0 origin of postgis coord system
-        outd.write('<Transform translation="0 0 0">\
-                <Shape><Sphere radius="1.0"/><Appearance USE="DARK_GRAY"/></Shape></Transform> ' + '\n')
+        #outd.write('<Transform translation="0 0 0">\
+        #        <Shape><Sphere radius="1.0"/><Appearance USE="DARK_GRAY"/></Shape></Transform> ' + '\n')
 
         for i,r in enumerate(qres):
             # bbox is black (default)
             outd.write('<shape><appearance><material></material></appearance>' + '\n')
-            outd.write(r[0].replace('FaceSet','LineSet') + '\n')
+            outd.write(r[1].replace('FaceSet','LineSet') + '\n')
             outd.write('</shape>' + '\n')
 
-            if i==0: #draw all boxes/hs only for one for readability
+            if i==0:#r[0]=='2020-05-15-11-13-38_805787_poly1': #draw all boxes/hs only for one for readability
                 # CBBs are blue
                 outd.write('<shape><appearance><material emissiveColor="0. 0. 1.0"></material></appearance>' + '\n')
-                outd.write(r[1].replace('FaceSet','LineSet') + '\n')
+                outd.write(r[2].replace('FaceSet','LineSet') + '\n')
                 outd.write('</shape>' + '\n')
                 #     #tophs are red
                 #     #outd.write('<shape><appearance><material emissiveColor="1.0 0. 0.0"></material></appearance>' + '\n')
-                #     #outd.write(r[2].replace('FaceSet','LineSet') + '\n')
+                #     #outd.write(r[3].replace('FaceSet','LineSet') + '\n')
                 #     #outd.write('</shape>' + '\n')
                 #     #btmhs green
                 #     #outd.write('<shape><appearance><material emissiveColor="0. 1.0 0."></material></appearance>' + '\n')
-                #     #outd.write(r[3].replace('FaceSet', 'LineSet') + '\n')
+                #     #outd.write(r[4].replace('FaceSet', 'LineSet') + '\n')
                 #     #outd.write('</shape>' + '\n')
                 # lefths are red
                 outd.write('<shape><appearance><material emissiveColor="1.0 0. 0.0"></material></appearance>' + '\n')
-                outd.write(r[4].replace('FaceSet', 'LineSet') + '\n')
+                outd.write(r[5].replace('FaceSet', 'LineSet') + '\n')
                 outd.write('</shape>' + '\n')
                 # righths green
                 outd.write('<shape><appearance><material emissiveColor="0. 1.0 0."></material></appearance>' + '\n')
-                outd.write(r[5].replace('FaceSet', 'LineSet') + '\n')
+                outd.write(r[6].replace('FaceSet', 'LineSet') + '\n')
                 outd.write('</shape>' + '\n')
                 #     # # fronths are red
                 #     # outd.write('<shape><appearance><material emissiveColor="1.0 0. 0.0"></material></appearance>' + '\n')
-                #     # outd.write(r[6].replace('FaceSet', 'LineSet') + '\n')
+                #     # outd.write(r[7].replace('FaceSet', 'LineSet') + '\n')
                 #     # outd.write('</shape>' + '\n')
                 #     # backhs green
                 #     # outd.write('<shape><appearance><material emissiveColor="0. 1.0 0."></material></appearance>' + '\n')
-                #     # outd.write(r[7].replace('FaceSet', 'LineSet') + '\n')
+                #     # outd.write(r[8].replace('FaceSet', 'LineSet') + '\n')
                 #     # outd.write('</shape>' + '\n')
                 #show convex hull
                 outd.write('<shape><appearance><material emissiveColor="1.0 0. 0.0"></material></appearance>' + '\n')

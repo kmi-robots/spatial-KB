@@ -189,7 +189,7 @@ def create_boxes(dbobj, sf=1.2):
         dbobj.connection.commit()
     """Just for debugging/ visualize the 3D geometries we have just constructed"""
     # return XML representation for 3D web visualizer
-    #tstamp = '2020-05-15-11-10-41_701203' #'2020-05-15-11-24-12_379522'  # remove when running on full set
+    #tstamp = '2020-05-15-11-13-38_805787' #'2020-05-15-11-24-12_379522'  # remove when running on full set
     #generate_html_viz(dbobj,tstamp)
     return tbprocessed
 
@@ -270,11 +270,11 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     return qsr_graph
 
 
-def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.10, wht=0.15):
+def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.10, wht=0.45):
     """Extract QSRs through PostGIS
     between current object and surfaces marked as wall/floor
     fht: threshold to find objects that are at floor height, i.e., min Z coordinate = 0
-    wht: for near wall surfaces - e.g., by default 15 cm
+    wht: for near wall surfaces - e.g., by default 45 cm
     motivation for threshold: granularity of map/GUI for wall annotation requires tolerance
     + account that walls are modelled 2D surfaces without depth in the GIS db, i.e., needs higher value than fht
     """
