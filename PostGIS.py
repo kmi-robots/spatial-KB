@@ -270,11 +270,11 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     return qsr_graph
 
 
-def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.10, wht=0.45):
+def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.15, wht=0.2):
     """Extract QSRs through PostGIS
     between current object and surfaces marked as wall/floor
     fht: threshold to find objects that are at floor height, i.e., min Z coordinate = 0
-    wht: for near wall surfaces - e.g., by default 45 cm
+    wht: for near wall surfaces - e.g., by default 20 cm
     motivation for threshold: granularity of map/GUI for wall annotation requires tolerance
     + account that walls are modelled 2D surfaces without depth in the GIS db, i.e., needs higher value than fht
     """
@@ -323,9 +323,9 @@ def infer_special_ON(local_graph):
         t = [(f,ref,r) for f,ref,r in local_graph.out_edges(node1, data=True) if r['QSR'] =='touches']
         is_t = [(f,ref,r) for f,ref,r in local_graph.in_edges(node1, data=True) if r['QSR'] =='touches']
         is_a = [f for f,_,r in local_graph.in_edges(node1, data=True) if r['QSR']=='below'] #edges where obj1 is reference and figure objects are below it
-
+        t_rs = list(set([ref for _,ref,_ in t]))
         if len(t)==0 and len(is_t)==0: continue #skip
-        elif len(t)==1 and len(is_t)==0: #exactly one touch relation
+        elif len(t)==1 and len(is_t)==0 or (len(t_rs) ==1 and t_rs=='wall'): #exactly one touch relation or touching only walls
             #where obj1 is fig, obj2 is ref
             node2 = t[0][1]
             l = [k for k in local_graph.get_edge_data(node1,node2) if local_graph.get_edge_data(node1,node2,k)['QSR']=='above']

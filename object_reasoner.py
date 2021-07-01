@@ -59,7 +59,7 @@ class ObjectReasoner():
 
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                #tstamp = '2020-05-15-11-13-38_805787' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
+                #tstamp = '2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
                 print("============================================")
                 print("Processing img %s" % tstamp)
                 # for debugging only: visualize img
@@ -123,12 +123,12 @@ class ObjectReasoner():
         disconnect_DB(tmp_conn, tmp_cur) #close spatial DB connection
         procTime = float(time.time() - start)  # global proc time
         print("Took % fseconds." % procTime)
-        eval_dictionary['spatial_VG']['processingTime'].append(procTime)
+        eval_dictionary['spatial']['processingTime'].append(procTime)
 
         #Re-eval post correction
         print("Hybrid results (spatial-only)")
-        eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial_VG')
-        eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial_VG', K=5)
+        eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial')
+        eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial', K=5)
         return eval_dictionary
 
     def space_validate(self,obj_list,qsr_graph,spatialDB, K=5):
@@ -169,6 +169,7 @@ class ObjectReasoner():
                 #Tipicality scores based on VG stats
                 sub_syn = self.taxonomy[pred_label]
                 all_spatial_scores = []
+                fig_rs = list(set([r for _,_,r in fig_qsrs])) #distinct figure relations present
                 for _,ref,r in fig_qsrs: #for each QSR where obj is figure, i.e., subject
                     if ref=='wall': obj_syn = ['wall.n.01'] #cases where reference is wall or floor
                     elif ref=='floor': obj_syn = ['floor.n.01']
@@ -176,12 +177,19 @@ class ObjectReasoner():
                     if obj_syn =='': #reference obj is e.g., foosball table or pigeon holes (absent from background KB)
                         all_spatial_scores.append(1.) #add up 1. as if not found to not alter ML ranking and skip
                         continue
-                    if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
+                    if r == 'touches':
+                        if len(fig_rs) ==1: # touches is the only rel
+                            all_spatial_scores.append(1.)  # add up 1. as if not found to not alter ML ranking and skip
+                            continue
+                        else: continue #there are other types, just skip this one as not relevant for VG
+                    elif r=='beside':
+                        continue #beside already checked through L/R rel
                     elif r == 'leansOn' or r == 'affixedOn': r = 'against'  # mapping on VG predicate
                     all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores,sub_syn, obj_syn,r)
 
                 # Similarly, for QSRs where predicted obj is reference, i.e., object
                 obj_syn = self.taxonomy[pred_label]
+                ref_rs = list(set([r for _, _, r in ref_qsrs]))  # distinct figure relations present
                 for fig,_,r in ref_qsrs:
                     if fig=='wall': sub_syn = ['wall.n.01'] #cases where reference is wall or floor
                     elif fig=='floor': sub_syn = ['floor.n.01']
@@ -189,7 +197,12 @@ class ObjectReasoner():
                     if sub_syn =='': #figure obj is e.g., foosball table or pigeon holes (absent from background KB)
                         all_spatial_scores.append(1.) #add up 1. as if not found to not alter ML ranking and skip
                         continue
-                    if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
+                    if r == 'touches':
+                        if len(ref_rs) ==1: # touches is the only rel
+                            all_spatial_scores.append(1.)  # add up 1. as if not found to not alter ML ranking and skip
+                            continue
+                        else: continue #there are other types, just skip this one as not relevant for VG
+                    elif r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
                     elif r =='leansOn' or r=='affixedOn': r = 'against' #mapping on VG predicate
                     all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores, sub_syn, obj_syn, r)
 

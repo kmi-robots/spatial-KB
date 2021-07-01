@@ -31,11 +31,15 @@ def main():
     parser.add_argument('--set', default='lab', choices=['lab'], help="Chosen dataset. Only Lab set supported at the moment.")
     parser.add_argument('--nsplits', type=int, default=7,
                         help="Number of folds for Kfold cross validation. Defaults to 7.")
+    parser.add_argument('--rm', nargs='?',
+                        choices=['spatial', 'size', 'size+spatial'],
+                        default="spatial",
+                        help="Reasoning method to use after applying ML baseline ")
 
     args = parser.parse_args()
 
-    overall_res = {m: {} for m in ['MLonly', 'spatial_VG']} # dictionary of ablations under test
-    overall_res['spatial_VG']['processingTime'] = []
+    overall_res = {m: {} for m in ['MLonly', args.rm]} # dictionary of ablations under test
+    overall_res[args.rm]['processingTime'] = []
     KB = KnowledgeBase(args)
 
     print("Init VG data and batch-compute 3D geometries for spatial DB.. ")
