@@ -58,15 +58,15 @@ class ObjectReasoner():
         for fname in self.fnames:
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                tstamp = '2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
+                #tstamp = '2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
                 print("============================================")
                 print("Processing img %s" % tstamp)
                 # for debugging only: visualize img
-                import cv2
+                """import cv2
                 cv2.imshow('win', cv2.imread(os.path.join('/home/agnese/bags/KMi-set-new/' \
                                                           'test/rgb', tstamp + '.jpg')))
                 cv2.waitKey(1000)
-                cv2.destroyAllWindows()
+                cv2.destroyAllWindows()"""
 
                 #QSRs are extracted for all img regions (self.fnames_full, self.labels_full)
                 QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
@@ -127,18 +127,18 @@ class ObjectReasoner():
         eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial_VG', K=5)
         return eval_dictionary
 
-    def space_validate(self,obj_list,qsr_graph,spatialDB):
+    def space_validate(self,obj_list,qsr_graph,spatialDB, K=5):
         #
         for oid in obj_list: #for each object to correct/validate
             i = self.fnames.index(oid)
-            ML_rank = self.predictions[i, :]
+            ML_rank = self.predictions[i, :K] #ML ranking @K
             hybrid_rank = np.copy(ML_rank)
             print("%s mistaken for a %s" % (self.remapper[self.labels[i]],self.remapper[ML_rank[0][0]]))
 
             print("Top-5 before correction: ")
             read_current_rank = [(self.remapper[ML_rank[z, 0]], ML_rank[z, 1]) for z in
                                  range(ML_rank.shape[0])]
-            print(read_current_rank[:5]) #ML rank in human readable form
+            print(read_current_rank) #ML rank in human readable form
 
             for n, (cnum, L2dis) in enumerate(ML_rank): #for each class in the ML rank
                 pred_label = self.remapper[cnum]
@@ -165,29 +165,9 @@ class ObjectReasoner():
                     if ref=='wall': obj_syn = 'wall.n.01' #cases where reference is wall or floor
                     elif ref=='floor': obj_syn = 'floor.n.01'
                     else: obj_syn = self.taxonomy[ref]
-
                     if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
                     elif r == 'leansOn' or r == 'affixedOn': r = 'against'  # mapping on VG predicate
-
-                    if len(sub_syn)>1 or len(obj_syn)>1:
-                        if len(sub_syn)>1 and len(obj_syn)>1: #try all sub,obj ordered combos
-                            print(list(itertools.product(sub_syn, obj_syn)))
-                            typscores = [self.compute_typicality_score(spatialDB, sub_s, obj_s, r) \
-                                         for sub_s, obj_s in list(itertools.product(sub_syn, obj_syn))]
-                        elif len(sub_syn)==1 and len(obj_syn)>1:
-                            typscores =[self.compute_typicality_score(spatialDB,sub_syn,osyn,r) for osyn in obj_syn]
-                        elif len(sub_syn)> 1 and len(obj_syn)==1:
-                            typscores = [self.compute_typicality_score(spatialDB, subs, obj_syn, r) for subs in sub_syn]
-
-                        typscores = [s for s in typscores if s != 0.]  # keep only synset that of no-null typicality
-                                                                       # in order of taxonomy (from preferred synset to least preferred)
-                        if len(typscores) == 0:
-                            typscore = 0.
-                        else: typscore = typscores[0][0]  # first one in the order
-
-                    else: typscore = self.compute_typicality_score(spatialDB,sub_syn,obj_syn,r)
-                    all_spatial_scores.append((1. - typscore))  #track INVERSE of score (so that it is comparable
-                                                                # with L2 distances, i.e., scores that are minimised)
+                    all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores,sub_syn, obj_syn,r)
 
                 # Similarly, for QSRs where predicted obj is reference, i.e., object
                 obj_syn = self.taxonomy[pred_label]
@@ -195,14 +175,7 @@ class ObjectReasoner():
                     sub_syn = self.taxonomy[fig]
                     if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
                     elif r =='leansOn' or r=='affixedOn': r = 'against' #mapping on VG predicate
-
-                    if len(obj_syn) > 1:
-                        typscores = [self.compute_typicality_score(spatialDB, ssyn, obj_syn, r) for ssyn in sub_syn]
-                        typscores = [s for s in typscores if s!= 0.] # keep only synset that of no-null typicality in order of taxonomy (from preferred synset to least preferred)
-                        if len(typscores)==0: typscore = 0.
-                        else: typscore = typscores[0] #first one in the order
-                    else: typscore = self.compute_typicality_score(spatialDB, sub_syn, obj_syn, r)
-                    all_spatial_scores.append((1. - typscore))  # track INVERSE of score
+                    all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores, sub_syn, obj_syn, r)
 
                 # Average across all QSRs
                 avg_spatial_score = statistics.mean(all_spatial_scores)
@@ -217,12 +190,39 @@ class ObjectReasoner():
             # ranking after correction is ..
             print("Top-5 after correction: ")
             read_phoc_rank = [(self.remapper[posthoc_rank[z, 0]], posthoc_rank[z, 1]) for z in range(posthoc_rank.shape[0])]
-            print(read_phoc_rank[:5])  # posthoc rank in human readable form
+            print(read_phoc_rank)  # posthoc rank in human readable form
             # replace predictions at that index with corrected predictions
-            self.predictions[i, :] = posthoc_rank
+            self.predictions[i, :K] = posthoc_rank
             if read_phoc_rank[0][0] != read_current_rank[0][0]:
                 print("something changed after spatial reasoning")
                 continue
+
+    def compute_all_scores(self, spatialDB, all_scores, sub_syn, obj_syn, r):
+        if len(sub_syn) > 1 or len(obj_syn) > 1:
+            if len(sub_syn) > 1 and len(obj_syn) > 1:  # try all sub,obj ordered combos
+                # print(list(itertools.product(sub_syn, obj_syn)))
+                typscores = [self.compute_typicality_score(spatialDB, sub_s, obj_s, r) \
+                             for sub_s, obj_s in list(itertools.product(sub_syn, obj_syn))]
+            elif len(sub_syn) == 1 and len(obj_syn) > 1:
+                sub_syn = sub_syn[0]
+                typscores = [self.compute_typicality_score(spatialDB, sub_syn, osyn, r) for osyn in obj_syn]
+            elif len(sub_syn) > 1 and len(obj_syn) == 1:
+                obj_syn = obj_syn[0]
+                typscores = [self.compute_typicality_score(spatialDB, subs, obj_syn, r) for subs in sub_syn]
+
+            typscores = [s for s in typscores if s != 0.]  # keep only synset that of no-null typicality
+            # in order of taxonomy (from preferred synset to least preferred)
+            if len(typscores) == 0:
+                typscore = 0.
+            else:
+                typscore = typscores[0]  # first one in the order
+
+        else:
+            sub_syn, obj_syn = sub_syn[0], obj_syn[0]
+            typscore = self.compute_typicality_score(spatialDB, sub_syn, obj_syn, r)
+        all_scores.append((1. - typscore))  # track INVERSE of score (so that it is comparable
+        # with L2 distances, i.e., scores that are minimised)
+        return all_scores
 
     def compute_typicality_score(self,spatialDB,sub_syn,obj_syn,rel, use_beside=False, use_near=False):
         #no of times the two appeared in that relation in VG
@@ -242,22 +242,23 @@ class ObjectReasoner():
                         use_near = True
                     except KeyError:
                         return 0.
+            else: return 0.
         #no of times sub_syn was subject of r relation in VG
         try:
             if use_near:
-                denom1 = float(spatialDB.KB.VG_stats['subjects']['near'][sub_syn])
+                denom1 = float(spatialDB.KB.VG_stats['subjects'][sub_syn]['near'])
             elif use_beside:
-                denom1 = float(spatialDB.KB.VG_stats['subjects']['beside'][sub_syn])
-            else: denom1 = float(spatialDB.KB.VG_stats['subjects'][rel][sub_syn])
+                denom1 = float(spatialDB.KB.VG_stats['subjects'][sub_syn]['beside'])
+            else: denom1 = float(spatialDB.KB.VG_stats['subjects'][sub_syn][rel])
         except KeyError: #if any hit is found
             return 0.
         #no of times obj_syn was object of r relation in VG
         try:
             if use_near:
-                denom2 = float(spatialDB.KB.VG_stats['objects']['near'][obj_syn])
+                denom2 = float(spatialDB.KB.VG_stats['objects'][obj_syn]['near'])
             elif use_beside:
-                denom2 = float(spatialDB.KB.VG_stats['objects']['beside'][obj_syn])
-            else: denom2 = float(spatialDB.KB.VG_stats['objects'][rel][obj_syn])
+                denom2 = float(spatialDB.KB.VG_stats['objects'][obj_syn]['beside'])
+            else: denom2 = float(spatialDB.KB.VG_stats['objects'][obj_syn][rel])
         except KeyError: #if any hit is found
             return 0.
         return nom / (denom1+denom2)
