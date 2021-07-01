@@ -54,9 +54,10 @@ class ObjectReasoner():
         start = time.time()
         tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname) #open spatial DB connection
         walls = retrieve_walls(tmp_cur) #retrieve all walls of map first
+        disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
         already_processed = []
         for fname in self.fnames:
-
+            tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname)  # open spatial DB connection
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
                 #tstamp = '2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
@@ -120,7 +121,7 @@ class ObjectReasoner():
                     # and image-wise instead of crop by crop
                     # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
 
-        disconnect_DB(tmp_conn, tmp_cur) #close spatial DB connection
+            disconnect_DB(tmp_conn, tmp_cur) #close spatial DB connection
         procTime = float(time.time() - start)  # global proc time
         print("Took % fseconds." % procTime)
         eval_dictionary['spatial']['processingTime'].append(procTime)
