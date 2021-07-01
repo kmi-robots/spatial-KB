@@ -58,7 +58,7 @@ class ObjectReasoner():
         for fname in self.fnames:
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                #tstamp = '2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
+                #tstamp = '2020-05-15-11-07-02_432115' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
                 print("============================================")
                 print("Processing img %s" % tstamp)
                 # for debugging only: visualize img
@@ -162,9 +162,12 @@ class ObjectReasoner():
                 sub_syn = self.taxonomy[pred_label]
                 all_spatial_scores = []
                 for _,ref,r in fig_qsrs: #for each QSR where obj is figure, i.e., subject
-                    if ref=='wall': obj_syn = 'wall.n.01' #cases where reference is wall or floor
-                    elif ref=='floor': obj_syn = 'floor.n.01'
+                    if ref=='wall': obj_syn = ['wall.n.01'] #cases where reference is wall or floor
+                    elif ref=='floor': obj_syn = ['floor.n.01']
                     else: obj_syn = self.taxonomy[ref]
+                    if obj_syn =='': #reference obj is e.g., foosball table or pigeon holes (absent from background KB)
+                        all_spatial_scores.append(1.) #add up 1. as if not found to not alter ML ranking and skip
+                        continue
                     if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
                     elif r == 'leansOn' or r == 'affixedOn': r = 'against'  # mapping on VG predicate
                     all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores,sub_syn, obj_syn,r)
@@ -172,7 +175,12 @@ class ObjectReasoner():
                 # Similarly, for QSRs where predicted obj is reference, i.e., object
                 obj_syn = self.taxonomy[pred_label]
                 for fig,_,r in ref_qsrs:
-                    sub_syn = self.taxonomy[fig]
+                    if fig=='wall': sub_syn = ['wall.n.01'] #cases where reference is wall or floor
+                    elif fig=='floor': sub_syn = ['floor.n.01']
+                    else: sub_syn = self.taxonomy[fig]
+                    if sub_syn =='': #figure obj is e.g., foosball table or pigeon holes (absent from background KB)
+                        all_spatial_scores.append(1.) #add up 1. as if not found to not alter ML ranking and skip
+                        continue
                     if r == 'touches' or r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
                     elif r =='leansOn' or r=='affixedOn': r = 'against' #mapping on VG predicate
                     all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores, sub_syn, obj_syn, r)
