@@ -56,6 +56,7 @@ class ObjectReasoner():
         walls = retrieve_walls(tmp_cur) #retrieve all walls of map first
         already_processed = []
         for fname in self.fnames:
+
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
                 #tstamp = '2020-05-15-11-07-02_432115' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
@@ -73,48 +74,51 @@ class ObjectReasoner():
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
                 img_ids = OrderedDict({key_:vol for key_,vol in img_ids.items() if key_ in self.fnames_full})#exclude those that were filtered as null
-                subids = [self.fnames.index(key_) for key_ in img_ids.keys() if key_ in self.fnames]
+                #subids = [self.fnames.index(key_) for key_ in img_ids.keys() if key_ in self.fnames]
                 subimg_ids = OrderedDict({key_: vol for key_, vol in img_ids.items() if
                                           key_ in self.fnames})  # subsampled list to use for correction later#
-                QSRs.add_nodes_from(img_ids.keys())
-                #lmapping uses gtruth labels but it is just for visualization purposes
-                #lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels_full[self.fnames_full.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
-                #lmapping['floor'] = 'floor'
-                #lmapping['wall'] = 'wall'
-                for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
-                    figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
-                    #cobj = lmapping[o_id]
-                    #if cobj == '8_backpack':
-                        #QSRs = nx.MultiDiGraph()
-                    if len(figure_objs)>0: #, if any
-                        #Find base QSRs between figure and nearby ref
-                        QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
-                    QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs) # in any case, alwayes extract relations with walls and floor
-
-                # after all references in image have been examined
-                # derive special cases of ON
-                QSRs = infer_special_ON(QSRs)
-                #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
-                #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
-
                 # which ML predictions to correct in that image?
                 # Correction is applied only for img regions in subsampled fold (self.fnames, self.labels)
-                if self.scenario =='best':
-                    #correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
+                if self.scenario == 'best':
+                    # correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
                     tbcorr = [id_ for id_ in subimg_ids if self.labels[self.fnames.index(id_)] != \
-                              self.predictions[self.fnames.index(id_),0,0]]
-                elif self.scenario == 'selected': # select for correction, based on confidence
+                              self.predictions[self.fnames.index(id_), 0, 0]]
+                elif self.scenario == 'selected':  # select for correction, based on confidence
                     tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
-                              >= self.epsilon_set[0]] #where L2 distance greater than conf thresh
-                else: tbcorr = img_ids #validate all
+                              >= self.epsilon_set[0]]  # where L2 distance greater than conf thresh
+                else:
+                    tbcorr = img_ids  # validate all
 
-                # proceed with validation/correction based on spatial knowledge
-                self.space_validate(tbcorr, QSRs,spatialDB)
+                if len(tbcorr)>0: #do reasoning/computation only if correction needed
 
-                #TODO integrate size correction as well,
-                # but this time dimensions are derived from postgis database
-                # and image-wise instead of crop by crop
-                # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
+                    QSRs.add_nodes_from(img_ids.keys())
+                    #lmapping uses gtruth labels but it is just for visualization purposes
+                    #lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels_full[self.fnames_full.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
+                    #lmapping['floor'] = 'floor'
+                    #lmapping['wall'] = 'wall'
+                    for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
+                        figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
+                        #cobj = lmapping[o_id]
+                        #if cobj == '8_backpack':
+                            #QSRs = nx.MultiDiGraph()
+                        if len(figure_objs)>0: #, if any
+                            #Find base QSRs between figure and nearby ref
+                            QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
+                        QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs) # in any case, alwayes extract relations with walls and floor
+
+                    # after all references in image have been examined
+                    # derive special cases of ON
+                    QSRs = infer_special_ON(QSRs)
+                    #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
+                    #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
+
+                    # proceed with validation/correction based on spatial knowledge
+                    self.space_validate(tbcorr, QSRs,spatialDB)
+
+                    #TODO integrate size correction as well,
+                    # but this time dimensions are derived from postgis database
+                    # and image-wise instead of crop by crop
+                    # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
 
         disconnect_DB(tmp_conn, tmp_cur) #close spatial DB connection
         procTime = float(time.time() - start)  # global proc time
