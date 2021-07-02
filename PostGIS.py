@@ -350,6 +350,16 @@ def infer_special_ON(local_graph):
                     local_graph.add_edge(node1, node2, QSR='leansOn') # then o1 leans on o2
     return local_graph
 
-def extract_sizes(session, obj_list):
+def extract_size(session, obj_id):
+    # Compute object dimensions based on data in spatial db
     tmp_conn, tmp_cur = session
-    #TODO compute object dimensions based on bbox in spatial db
+    tmp_cur.execute("""SELECT ST_Zmax(bbox) - ST_Zmin(bbox) as h, 
+                        ST_Distance(ST_PointN( ST_ExteriorRing( ST_OrientedEnvelope(projection_2d)), 1),
+                    ST_PointN( ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2) ) AS d1, 
+        ST_Distance(ST_PointN( ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2),
+                    ST_PointN( ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 3) ) AS d2 
+                        FROM semantic_map
+                        WHERE object_id = %s
+                        """, (obj_id,))
+    res = tmp_cur.fetchone()
+    return res[0], res[1], res[2]  #list of (d1,d2,d3)

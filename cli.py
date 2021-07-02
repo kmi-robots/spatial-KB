@@ -62,7 +62,7 @@ def main():
     allclasses = reasoner.mapper.values()
     for test1_index, test2_index in skf.split(reasoner.predictions, reasoner.labels):
         sampled_reasoner = subsample(copy.deepcopy(reasoner), test1_index, test2_index, allclasses)
-        overall_res = sampled_reasoner.run(overall_res,spatialDB)
+        overall_res = sampled_reasoner.run(overall_res,spatialDB, KB.size_auto)
 
     """Compute mean and stdev of eval results across test runs
      and output eval report as json file"""
@@ -76,7 +76,7 @@ def main():
             stdm = statistics.stdev(metric_array)
             print("Stdev %s: %f" % (metric_name, stdm))
             avg_res[method][metric_name] = str(meanm) + "+-" + str (stdm)
-    with open(os.path.join(args.path_to_data, 'eval_results_%s_%s' % (args.baseline, args.set)), 'w') as jout:
+    with open(os.path.join(args.path_to_data, 'eval_results_%s_%s_%s' % (args.baseline, args.set, args.rm)), 'w') as jout:
         json.dump(avg_res, jout)
     return 0
 

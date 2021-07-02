@@ -9,9 +9,11 @@ import json
 import time
 import statistics
 import networkx as nx
+import cv2
+
 from evalscript import eval_singlemodel
 from PostGIS import *
-import itertools
+import quantizer
 from utils import graphs as ugr
 
 
@@ -25,6 +27,9 @@ class ObjectReasoner():
             self.mapper = json.load(cin)
             self.fnames= [p.split('/')[-1].split('.')[0] for p in txti.read().splitlines()] #extract basename from imgpath
             self.taxonomy = json.load(sin)
+        with open(os.path.join(args.path_to_pred, 'test-imgs.txt')) as txti:
+            self.crops = [cv2.imread(p).shape[:2] for p in txti.read().splitlines()]  # extract width and height of each 2D obj crop
+
         self.predictions = np.load(('%s/test_predictions_%s.npy' % (args.path_to_pred, args.baseline)),
                                    allow_pickle=True)
         self.remapper = dict((v, k) for k, v in self.mapper.items())  # swap keys with indices
@@ -32,6 +37,10 @@ class ObjectReasoner():
         self.filter_nulls(idlist)
         self.reasoner_type = args.rm
         self.spatial_label_type = args.ql
+
+        #size reasoning params (autom derived from prior sorting of objects into histograms)
+        self.T = [-4.149075426919093, -2.776689935975939, -1.4043044450327855, -0.0319189540896323]
+        self.lam = [-2.0244465762356794, -1.0759355070093815, -0.12742443778308354]
 
     def filter_nulls(self,idlist):
         """remove filenames, labels and predictions which had been filtered from spatial DB
@@ -44,7 +53,7 @@ class ObjectReasoner():
         self.labels_full = self.labels
         self.pred_full = self.predictions
 
-    def run(self, eval_dictionary, spatialDB):
+    def run(self, eval_dictionary, spatialDB, sizeKB):
         """Similarly to the proposed size reasoner, we go image by image and find the ref-figure set,
          then in descending volume order, compute QSRs only for nearby objects to each"""
 
@@ -58,9 +67,13 @@ class ObjectReasoner():
         tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname) #open spatial DB connection
         walls = retrieve_walls(tmp_cur) #retrieve all walls of map first
         disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
+        MLranks = self.predictions[:, :5, :] #set of only top-5 predictions for each object
+        sizequal_copy = MLranks.copy() #copies for ablation study on individual size features
+        flat_copy = MLranks.copy()
+        thin_copy = MLranks.copy()
+        flatAR_copy = MLranks.copy()
         already_processed = []
         for fname in self.fnames:
-
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
                 #tstamp = '2020-05-15-11-03-49_655068' #'2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
@@ -100,19 +113,55 @@ class ObjectReasoner():
                 if len(tbcorr)>0: #do reasoning/computation only if correction needed
 
                     """Qualitative Size Reasoning"""
-                    # TODO integrate size correction as well,
                     # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
                     if 'size' in self.reasoner_type:
-                        extract_sizes((tmp_conn,tmp_cur),tbcorr)# extract observed sizes based on dimensions of bbox on spatial DB
-                        self.size_validate(tbcorr)
+                        for oid in tbcorr:
+                            d1,d2,d3 = extract_size((tmp_conn,tmp_cur),oid)# extract observed sizes based on dimensions of bbox on spatial DB
+                            cropimg_shape = self.crops[self.fnames.index(oid)]
+                            sres = self.size_validate([d1,d2,d3], self.lam, self.T, sizeKB, cropimg_shape)
+                            candidates_num, candidates_num_flat, candidates_num_thin, candidates_num_flatAR, candidates_num_thinAR = sres
 
-                        # TODO validate objects in tbcorr
+                            # Keep only ML predictions which are plausible wrt size
+                            full_vision_rank = self.predictions[self.fnames.index(oid)]
+                            valid_rank_flatAR = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_flatAR for z in range(full_vision_rank.shape[0])]]
+                            valid_rank_thinAR = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_thinAR for z in range(full_vision_rank.shape[0])]]
+
+                            valid_rank = full_vision_rank[[full_vision_rank[z, 0] in candidates_num for z in range(full_vision_rank.shape[0])]]
+                            valid_rank_flat = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_flat for z in range(full_vision_rank.shape[0])]]
+                            valid_rank_thin = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_thin for z in range(full_vision_rank.shape[0])]]
+
+                            # convert rankings to readable labels
+                            read_res = self.makereadable(full_vision_rank, valid_rank, valid_rank_flat, valid_rank_thin,
+                                                         valid_rank_flatAR, valid_rank_thinAR)
+                            read_rank_ML, read_rank_area, read_rank_flat, read_rank_thin, read_rank_flatAR, read_rank_thinAR = read_res
+
+                            # Verbose result printing for inspection
+                            print("Initial ML rank")
+                            print(read_rank_ML[:5])
+                            print("Knowledge validated ranking (area)")
+                            print(read_rank_area[:5])
+                            print("Knowledge validated ranking (area + flat)")
+                            print(read_rank_flat[:5])
+                            print("Knowledge validated ranking (area + thin)")
+                            print(read_rank_thin[:5])
+                            if candidates_num_flatAR is not None:
+                                print("Knowledge validated ranking (area + flat + AR)")
+                                print(read_rank_flatAR[:5])
+                            if candidates_num_thinAR is not None:
+                                print("Knowledge validated ranking (area + thin + AR)")
+                                print(read_rank_thinAR[:5])
+
+                            ind = self.fnames.index(oid)
+                            if len(valid_rank_thinAR) > 0: MLranks[ind, :] = valid_rank_thinAR[:5, :]
+                            if len(valid_rank_flatAR) > 0:
+                                flatAR_copy[ind, :] = valid_rank_flatAR[:5, :]
+                            thin_copy[ind, :] = valid_rank_thin[:5, :]
+                            sizequal_copy[ind, :] = valid_rank[:5, :]  # _thin[:5,:]
+                            flat_copy[ind, :] = valid_rank_flat[:5, :]
+
+                            self.predictions[ind, :5] = MLranks[ind, :] # change ML predictions
                         if self.reasoner_type=='size':
-                            # TODO change ML predictions
                             continue #skip spatial reasoning steps
-                        else: #size + spatial
-
-                            pass #continue with spatial steps but consider candidates in spatial ranking
 
                     """Qualitative Spatial Reasoning"""
                     if 'spatial' in self.reasoner_type:
@@ -123,7 +172,7 @@ class ObjectReasoner():
                         #lmapping['wall'] = 'wall'
                         for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
                             # tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
-                            #                               spatialDB.dbname)  # open spatial DB connection
+                            #                                                 spatialDB.dbname)  # open spatial DB connection
                             figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
                             # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
                             #cobj = lmapping[o_id]
@@ -148,40 +197,92 @@ class ObjectReasoner():
                         QSRs = infer_special_ON(QSRs)
                         #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
                         #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
-                        if self.reasoner_type == 'size+spatial':
-                            self.space_validate(tbcorr, QSRs, spatialDB, withsize=True)
-                        else: # proceed with validation/correction based on spatial knowledge
-                            self.space_validate(tbcorr, QSRs,spatialDB)
+                        self.space_validate(tbcorr, QSRs, spatialDB) # proceed with validation/correction based on spatial knowledge
+
 
                 disconnect_DB(tmp_conn, tmp_cur)
 
+
         procTime = float(time.time() - start)  # global proc time
         print("Took % fseconds." % procTime)
-        eval_dictionary['spatial']['processingTime'].append(procTime)
+        eval_dictionary[self.reasoner_type]['processingTime'].append(procTime)
 
         #Re-eval post correction
         print("Hybrid results (spatial-only)")
-        eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial')
-        eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial', K=5)
+        eval_dictionary = eval_singlemodel(self, eval_dictionary, self.reasoner_type)
+        eval_dictionary = eval_singlemodel(self, eval_dictionary, self.reasoner_type, K=5)
+        if 'size' in self.reasoner_type:
+            #also print results of other combinations of size features
+            for abl, preds in list(zip(['size qual', 'size qual+flat', 'size qual+thin', 'size qual+flat+AR']\
+                    ,[sizequal_copy, flat_copy, thin_copy, flatAR_copy])):
+                print("Hybrid results (%s)" % abl)
+                self.predictions = preds #ok to change self.predictions directly as in next crossval run the reasoner obj will be refreshed
+                eval_dictionary = eval_singlemodel(self, eval_dictionary, abl)
+                eval_dictionary = eval_singlemodel(self, eval_dictionary, abl, K=5)
+
         return eval_dictionary
 
-    def size_validate(self, obj_list):
-        pass
+    def size_validate(self, estimated_dims, lam, T, KB, crop_shape):
+        depth = min(estimated_dims)   #bc KB is for all three configurations of d1,d2,d3 here we make the assumption of considering only one configuration
+        estimated_dims.remove(depth)  # i.e., the one where the min of the three is taken as depth
+        d1, d2 = estimated_dims
 
-    def space_validate(self,obj_list,qsr_graph,spatialDB, K=5, withsize=False):
+        """ size quantization: from quantitative dims to qualitative labels"""
+        qual = quantizer.size_qual(d1, d2, thresholds=T)
+        flat = quantizer.flat(depth, len_thresh=lam[0])
+        flat_flag = 'flat' if flat else 'non flat'
+        # Aspect ratio based on crop
+        aspect_ratio = quantizer.AR(crop_shape, (d1, d2))
+        thinness = quantizer.thinness(depth, cuts=lam)
+        cluster = qual + "-" + thinness
+
+        print("Detected size is %s" % qual)
+        print("Object is %s" % flat_flag)
+        print("Object is %s" % aspect_ratio)
+        print("Object is %s" % thinness)
+
+        """ Hybrid (area) """
+        candidates = [oname for oname in KB.keys() if qual in str(
+            KB[oname]["has_size"])]  # len([s for s in self.KB[oname]["has_size"] if s.startswith(qual)])>0]
+        candidates_num = [self.mapper[oname.replace(' ', '_')] for oname in candidates]
+
+        """ Hybrid (area + flat) """
+        candidates_flat = [oname for oname in candidates if str(flat) in str(KB[oname]["is_flat"])]
+        candidates_num_flat = [self.mapper[oname.replace(' ', '_')] for oname in candidates_flat]
+
+        """ Hybrid (area + thin) """
+        try:
+            candidates_thin = [oname for oname in candidates if thinness in str(KB[oname]["thinness"])]
+
+        except KeyError:  # annotation format variation
+            candidates_thin = [oname for oname in candidates if thinness in str(KB[oname]["has_size"])]
+
+        candidates_num_thin = [self.mapper[oname.replace(' ', '_')] for oname in candidates_thin]
+
+        """ Hybrid (area + flat+AR) """
+        candidates_flat_AR = [oname for oname in candidates_flat if aspect_ratio in str(KB[oname]["aspect_ratio"])]
+        candidates_num_flatAR = [self.mapper[oname.replace(' ', '_')] for oname in candidates_flat_AR]
+
+        """ Hybrid (area + thin +AR) """
+        candidates_thin_AR = [oname for oname in candidates_thin if aspect_ratio in str(KB[oname]["aspect_ratio"])]
+        candidates_num_thinAR = [self.mapper[oname.replace(' ', '_')] for oname in candidates_thin_AR]
+
+        return [candidates_num, candidates_num_flat, candidates_num_thin, candidates_num_flatAR, candidates_num_thinAR]
+
+    def space_validate(self,obj_list,qsr_graph,spatialDB, K=5):
         #
         for oid in obj_list: #for each object to correct/validate
             i = self.fnames.index(oid)
-            ML_rank = self.predictions[i, :K] #ML ranking @K
-            hybrid_rank = np.copy(ML_rank)
-            print("%s predicted as %s" % (self.remapper[self.labels[i]],self.remapper[ML_rank[0][0]]))
+            prior_rank = self.predictions[i, :K] #prior ranking @K: if spatial only it is the ML rank, if size+space already filtered by size
+            hybrid_rank = np.copy(prior_rank)
+            print("%s predicted as %s" % (self.remapper[self.labels[i]],self.remapper[prior_rank[0][0]]))
 
-            print("Top-5 before correction: ")
-            read_current_rank = [(self.remapper[ML_rank[z, 0]], ML_rank[z, 1]) for z in
-                                 range(ML_rank.shape[0])]
+            print("Top-5 before spatial validation: ")
+            read_current_rank = [(self.remapper[prior_rank[z, 0]], prior_rank[z, 1]) for z in
+                                 range(prior_rank.shape[0])]
             print(read_current_rank) #ML rank in human readable form
 
-            for n, (cnum, L2dis) in enumerate(ML_rank): #for each class in the ML rank
+            for n, (cnum, L2dis) in enumerate(prior_rank): #for each class in the ML rank
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
 
@@ -264,7 +365,7 @@ class ObjectReasoner():
             hybrid_rank[:, 1] = np.array([(x-min_)/(max_ - min_) for x in scores])
             posthoc_rank = hybrid_rank[np.argsort(hybrid_rank[:, 1])] # order by score ascending
             # ranking after correction is ..
-            print("Top-5 after correction: ")
+            print("Top-5 after spatial validation: ")
             read_phoc_rank = [(self.remapper[posthoc_rank[z, 0]], posthoc_rank[z, 1]) for z in range(posthoc_rank.shape[0])]
             print(read_phoc_rank)  # posthoc rank in human readable form
             # replace predictions at that index with corrected predictions
@@ -338,3 +439,24 @@ class ObjectReasoner():
         except KeyError: #if any hit is found
             return 0.
         return nom / (denom1+denom2)
+
+    def makereadable(self,ML_rank, valid_rank, valid_rank_flat, valid_rank_thin, valid_rank_flatAR, valid_rank_thinAR):
+
+        read_rank_ML = [(self.remapper[ML_rank[z, 0]], ML_rank[z, 1]) for z in
+                     range(ML_rank.shape[0])]
+        read_rank_area = [(self.remapper[valid_rank[z, 0]], valid_rank[z, 1]) for z in
+                     range(valid_rank.shape[0])]
+        read_rank_flat = [(self.remapper[valid_rank_flat[z, 0]], valid_rank_flat[z, 1]) for z in
+                          range(valid_rank_flat.shape[0])]
+        read_rank_thin = [(self.remapper[valid_rank_thin[z, 0]], valid_rank_thin[z, 1]) for z in
+                          range(valid_rank_thin.shape[0])]
+        if len(valid_rank_flatAR)>0:
+            read_rank_flatAR = [(self.remapper[valid_rank_flatAR[z, 0]], valid_rank_flatAR[z, 1]) for z in
+                                range(valid_rank_flatAR.shape[0])]
+        else: read_rank_flatAR =[]
+        if len(valid_rank_thinAR)>0:
+            read_rank_thinAR = [(self.remapper[valid_rank_thinAR[z, 0]], valid_rank_thinAR[z, 1]) for z in
+                            range(valid_rank_thinAR.shape[0])]
+        else: read_rank_thinAR=[]
+
+        return [read_rank_ML, read_rank_area, read_rank_flat, read_rank_thin, read_rank_flatAR, read_rank_thinAR]

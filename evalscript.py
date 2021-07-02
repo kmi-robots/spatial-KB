@@ -14,8 +14,13 @@ def eval_singlemodel(ReasonerObj,eval_d,method, K=1):
         for k,metr in [('accuracy',global_acc),('Punweighted',Pu),('Runweighted',Ru),('F1unweighted',F1u), ('Pweighted',Pw),('Rweighted',Rw),('F1weighted',F1w)]:
             try:eval_d[method][k].append(metr)
             except KeyError:
-                eval_d[method][k] =[]
-                eval_d[method][k].append(metr)
+                try:
+                    eval_d[method][k] =[]
+                    eval_d[method][k].append(metr)
+                except KeyError:
+                    eval_d[method]= {}
+                    eval_d[method][k] = []
+                    eval_d[method][k].append(metr)
         return eval_d
     else:#eval quality of top-K ranking
         return eval_ranking(ReasonerObj, K, eval_d,method)

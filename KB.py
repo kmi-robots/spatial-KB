@@ -19,14 +19,15 @@ class KnowledgeBase():
                               ("above",), ("near","by","around")] #predicate pool, with synonyms, needed to derive the commonsense predicates of (Landau & Jackendoff 1993)
                                                     # also adopted in our paper
         start = time.time()
-        self.size_catalogue(args)
+        self.size_catalogue()
         print("Background size KB initialized. Took %f seconds." % float(time.time() - start))
+
     def size_catalogue(self):
         try:
             with open('data/lab_obj_catalogue_autom_valid.json') as fin, \
-                    open('data/lab_obj_catalogue.json') as fin2:
-                self.sizeKB_auto = json.load(fin)  # where the ground truth knowledge is
-                self.sizeKB_manual = json.load(fin2) #manually sorted objects
+                 open('data/lab_obj_catalogue.json') as fin2:
+                self.size_auto = json.load(fin)  # where the ground truth knowledge is
+                self.size_manual = json.load(fin2) #manually sorted objects
         except FileNotFoundError:
             print("No lab catalogue or class-to-label index found - please refer to object_sizes.py for expected catalogue format")
             sys.exit(0)
