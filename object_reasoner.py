@@ -30,6 +30,8 @@ class ObjectReasoner():
         self.remapper = dict((v, k) for k, v in self.mapper.items())  # swap keys with indices
         self.scenario = args.scenario
         self.filter_nulls(idlist)
+        self.reasoner_type = args.rm
+        self.spatial_label_type = args.ql
 
     def filter_nulls(self,idlist):
         """remove filenames, labels and predictions which had been filtered from spatial DB
@@ -40,6 +42,7 @@ class ObjectReasoner():
         self.predictions = self.predictions[indices]
         self.fnames_full = self.fnames #these full lists will not be subsampled in crossval, i.e., used to extract all QSRs nonetheless
         self.labels_full = self.labels
+        self.pred_full = self.predictions
 
     def run(self, eval_dictionary, spatialDB):
         """Similarly to the proposed size reasoner, we go image by image and find the ref-figure set,
@@ -155,7 +158,7 @@ class ObjectReasoner():
             i = self.fnames.index(oid)
             ML_rank = self.predictions[i, :K] #ML ranking @K
             hybrid_rank = np.copy(ML_rank)
-            print("%s mistaken for a %s" % (self.remapper[self.labels[i]],self.remapper[ML_rank[0][0]]))
+            print("%s predicted as %s" % (self.remapper[self.labels[i]],self.remapper[ML_rank[0][0]]))
 
             print("Top-5 before correction: ")
             read_current_rank = [(self.remapper[ML_rank[z, 0]], ML_rank[z, 1]) for z in
@@ -166,11 +169,21 @@ class ObjectReasoner():
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
 
-                #TODO replace self.labels_full below with predicted labels in further eval to check whether QSRs without ground truth can help
-                fig_qsrs = [(pred_label,self.remapper[self.labels_full[self.fnames_full.index(ref)]],r['QSR'])
-                        for f,ref,r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall','floor']] #rels where obj is figure
-                ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]],pred_label,r['QSR'])
-                        for f,ref,r in qsr_graph.in_edges(oid, data=True) if f not in ['wall','floor']] # rels where obj is reference
+                if self.spatial_label_type == 'gold':
+                    # use ground truth for nearby object (except the one being predicted)
+                    fig_qsrs = [(pred_label,self.remapper[self.labels_full[self.fnames_full.index(ref)]],r['QSR'])
+                            for f,ref,r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall','floor']] #rels where obj is figure
+                    ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]],pred_label,r['QSR'])
+                            for f,ref,r in qsr_graph.in_edges(oid, data=True) if f not in ['wall','floor']] # rels where obj is reference
+
+                elif self.spatial_label_type == 'ML':
+                    # use ground truth for nearby object (except the one being predicted)
+                    fig_qsrs = [(pred_label, self.remapper[self.pred_full[self.fnames_full.index(ref), 0, 0]], r['QSR'])
+                                for f, ref, r in qsr_graph.out_edges(oid, data=True) if
+                                ref not in ['wall', 'floor']]  # rels where obj is figure
+                    ref_qsrs = [(self.remapper[self.pred_full[self.fnames_full.index(f), 0, 0]], pred_label, r['QSR'])
+                                for f, ref, r in qsr_graph.in_edges(oid, data=True) if
+                                f not in ['wall', 'floor']]  # rels where obj is reference
 
                 #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf
                 surface_qsrs = [(pred_label,ref,r['QSR']) for f,ref,r \
