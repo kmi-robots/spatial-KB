@@ -1,6 +1,7 @@
 """KB class"""
 import time
 from re import search
+import sys
 
 from PostGIS import *
 from VG import *
@@ -17,6 +18,19 @@ class KnowledgeBase():
                               ("next to","beside","adjacent", "on side of"),  ("under", "below"),
                               ("above",), ("near","by","around")] #predicate pool, with synonyms, needed to derive the commonsense predicates of (Landau & Jackendoff 1993)
                                                     # also adopted in our paper
+        start = time.time()
+        self.size_catalogue(args)
+        print("Background size KB initialized. Took %f seconds." % float(time.time() - start))
+    def size_catalogue(self):
+        try:
+            with open('data/lab_obj_catalogue_autom_valid.json') as fin, \
+                    open('data/lab_obj_catalogue.json') as fin2:
+                self.sizeKB_auto = json.load(fin)  # where the ground truth knowledge is
+                self.sizeKB_manual = json.load(fin2) #manually sorted objects
+        except FileNotFoundError:
+            print("No lab catalogue or class-to-label index found - please refer to object_sizes.py for expected catalogue format")
+            sys.exit(0)
+
     def load_data(self,reasoner):
         # Same db session as reasoner
         self.cursor, self.connection = reasoner.cursor, reasoner.connection

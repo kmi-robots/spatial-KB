@@ -99,46 +99,59 @@ class ObjectReasoner():
 
                 if len(tbcorr)>0: #do reasoning/computation only if correction needed
 
-                    QSRs.add_nodes_from(img_ids.keys())
-                    #lmapping uses gtruth labels but it is just for visualization purposes
-                    #lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels_full[self.fnames_full.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
-                    #lmapping['floor'] = 'floor'
-                    #lmapping['wall'] = 'wall'
-                    for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
-                        # tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
-                        #                               spatialDB.dbname)  # open spatial DB connection
-                        figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
-                        # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
-                        #cobj = lmapping[o_id]
-                        #if cobj == '8_backpack':
-                            #QSRs = nx.MultiDiGraph()
-                        if len(figure_objs)>0: #, if any
-                            #Find base QSRs between figure and nearby ref
-                            #tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
-                            #                               spatialDB.dbname)  # open spatial DB connection
-                            QSRs = extract_QSR((tmp_conn, tmp_cur),o_id,figure_objs,QSRs)
-                            #disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
-                        # tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
-                        #                                spatialDB.dbname)  # open spatial DB connection
-                        if tmp_conn.closed != 0:
-                            time.sleep(1)#delay to avoid DB locks
-                            #refresh connection, closed by problematic prior query
-                            tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname)
-                        QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs) # in any case, alwayes extract relations with walls and floor
-                        # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
-                    # after all references in image have been examined
-                    # derive special cases of ON
-                    QSRs = infer_special_ON(QSRs)
-                    #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
-                    #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
-
-                    # proceed with validation/correction based on spatial knowledge
-                    self.space_validate(tbcorr, QSRs,spatialDB)
-
-                    #TODO integrate size correction as well,
-                    # but this time dimensions are derived from postgis database
-                    # and image-wise instead of crop by crop
+                    """Qualitative Size Reasoning"""
+                    # TODO integrate size correction as well,
                     # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
+                    if 'size' in self.reasoner_type:
+                        extract_sizes((tmp_conn,tmp_cur),tbcorr)# extract observed sizes based on dimensions of bbox on spatial DB
+                        self.size_validate(tbcorr)
+
+                        # TODO validate objects in tbcorr
+                        if self.reasoner_type=='size':
+                            # TODO change ML predictions
+                            continue #skip spatial reasoning steps
+                        else: #size + spatial
+
+                            pass #continue with spatial steps but consider candidates in spatial ranking
+
+                    """Qualitative Spatial Reasoning"""
+                    if 'spatial' in self.reasoner_type:
+                        QSRs.add_nodes_from(img_ids.keys())
+                        #lmapping uses gtruth labels but it is just for visualization purposes
+                        #lmapping = dict((o_id, str(i) + '_' + self.remapper[self.labels_full[self.fnames_full.index(o_id)]]) for i,o_id in enumerate(img_ids.keys()))
+                        #lmapping['floor'] = 'floor'
+                        #lmapping['wall'] = 'wall'
+                        for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
+                            # tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
+                            #                               spatialDB.dbname)  # open spatial DB connection
+                            figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
+                            # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
+                            #cobj = lmapping[o_id]
+                            #if cobj == '8_backpack':
+                                #QSRs = nx.MultiDiGraph()
+                            if len(figure_objs)>0: #, if any
+                                #Find base QSRs between figure and nearby ref
+                                #tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
+                                #                               spatialDB.dbname)  # open spatial DB connection
+                                QSRs = extract_QSR((tmp_conn, tmp_cur),o_id,figure_objs,QSRs)
+                                #disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
+                            # tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
+                            #                                spatialDB.dbname)  # open spatial DB connection
+                            if tmp_conn.closed != 0:
+                                time.sleep(1)#delay to avoid DB locks
+                                #refresh connection, closed by problematic prior query
+                                tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname)
+                            QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs) # in any case, alwayes extract relations with walls and floor
+                            # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
+                        # after all references in image have been examined
+                        # derive special cases of ON
+                        QSRs = infer_special_ON(QSRs)
+                        #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
+                        #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
+                        if self.reasoner_type == 'size+spatial':
+                            self.space_validate(tbcorr, QSRs, spatialDB, withsize=True)
+                        else: # proceed with validation/correction based on spatial knowledge
+                            self.space_validate(tbcorr, QSRs,spatialDB)
 
                 disconnect_DB(tmp_conn, tmp_cur)
 
@@ -152,7 +165,10 @@ class ObjectReasoner():
         eval_dictionary = eval_singlemodel(self, eval_dictionary, 'spatial', K=5)
         return eval_dictionary
 
-    def space_validate(self,obj_list,qsr_graph,spatialDB, K=5):
+    def size_validate(self, obj_list):
+        pass
+
+    def space_validate(self,obj_list,qsr_graph,spatialDB, K=5, withsize=False):
         #
         for oid in obj_list: #for each object to correct/validate
             i = self.fnames.index(oid)

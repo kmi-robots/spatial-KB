@@ -349,3 +349,7 @@ def infer_special_ON(local_graph):
                 if len(l)==0 and len(lb)==0 and len(others_below)>0: #and there is at least an o3 different from o2 which is below o1
                     local_graph.add_edge(node1, node2, QSR='leansOn') # then o1 leans on o2
     return local_graph
+
+def extract_sizes(session, obj_list):
+    tmp_conn, tmp_cur = session
+    #TODO compute object dimensions based on bbox in spatial db
