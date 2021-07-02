@@ -57,10 +57,10 @@ class ObjectReasoner():
         disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
         already_processed = []
         for fname in self.fnames:
-            tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname)  # open spatial DB connection
+
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                #tstamp = '2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
+                #tstamp = '2020-05-15-11-03-49_655068' #'2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
                 print("============================================")
                 print("Processing img %s" % tstamp)
                 # for debugging only: visualize img
@@ -73,7 +73,11 @@ class ObjectReasoner():
                 #QSRs are extracted for all img regions (self.fnames_full, self.labels_full)
                 QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
                 already_processed.append(tstamp)  # to skip other crops which are within the same frame
+
+                tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname)  # open spatial DB connection
                 img_ids = retrieve_ids_ord((tmp_conn,tmp_cur),tstamp) # find all other spatial regions at that timestamp in db
+                # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
+
                 img_ids = OrderedDict({key_:vol for key_,vol in img_ids.items() if key_ in self.fnames_full})#exclude those that were filtered as null
                 #subids = [self.fnames.index(key_) for key_ in img_ids.keys() if key_ in self.fnames]
                 subimg_ids = OrderedDict({key_: vol for key_, vol in img_ids.items() if
@@ -98,15 +102,27 @@ class ObjectReasoner():
                     #lmapping['floor'] = 'floor'
                     #lmapping['wall'] = 'wall'
                     for i, o_id in enumerate(img_ids.keys()): # find figures of each reference
+                        # tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
+                        #                               spatialDB.dbname)  # open spatial DB connection
                         figure_objs = find_neighbours((tmp_conn,tmp_cur), o_id, img_ids)
+                        # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
                         #cobj = lmapping[o_id]
                         #if cobj == '8_backpack':
                             #QSRs = nx.MultiDiGraph()
                         if len(figure_objs)>0: #, if any
                             #Find base QSRs between figure and nearby ref
-                            QSRs = extract_QSR((tmp_conn,tmp_cur),o_id,figure_objs,QSRs)
+                            #tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
+                            #                               spatialDB.dbname)  # open spatial DB connection
+                            QSRs = extract_QSR((tmp_conn, tmp_cur),o_id,figure_objs,QSRs)
+                            #disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
+                        # tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
+                        #                                spatialDB.dbname)  # open spatial DB connection
+                        if tmp_conn.closed != 0:
+                            time.sleep(1000)#delay to avoid DB locks
+                            #refresh connection, closed by problematic prior query
+                            tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname)
                         QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs) # in any case, alwayes extract relations with walls and floor
-
+                        # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
                     # after all references in image have been examined
                     # derive special cases of ON
                     QSRs = infer_special_ON(QSRs)
@@ -121,7 +137,8 @@ class ObjectReasoner():
                     # and image-wise instead of crop by crop
                     # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
 
-            disconnect_DB(tmp_conn, tmp_cur) #close spatial DB connection
+                disconnect_DB(tmp_conn, tmp_cur)
+
         procTime = float(time.time() - start)  # global proc time
         print("Took % fseconds." % procTime)
         eval_dictionary['spatial']['processingTime'].append(procTime)

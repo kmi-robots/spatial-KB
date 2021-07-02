@@ -13,11 +13,10 @@ def connect_DB(user,dbname):
     try:
         conn = psycopg2.connect(dbname=dbname, user=user, password=keyring.get_password(dbname,user))
         cur = conn.cursor()
-        print(conn.get_dsn_parameters(), "\n")
-        cur.execute("SELECT version();")
-        record = cur.fetchone()
-        print("You are connected to - ", record, "\n")
-
+        #print(conn.get_dsn_parameters(), "\n")
+        #cur.execute("SELECT version();")
+        #record = cur.fetchone()
+        #print("You are connected to - ", record, "\n")
     except (Exception,Error) as error:
         print("Error while connecting to PostgreSQL", error)
         conn, cur = None, None
@@ -27,7 +26,7 @@ def connect_DB(user,dbname):
 def disconnect_DB(connection,cursor):
     cursor.close()
     connection.close()
-    print("Closed PostgreSQL connection")
+    # print("Closed PostgreSQL connection")
 
 def create_VG_table(cursor):
     cursor.execute(
@@ -228,7 +227,9 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
         if not qsr_graph.has_node(figure_id): #add new node if not already there
             qsr_graph.add_node(figure_id)
         #Use postGIS for deriving truth values of base operators
-        tmp_cur.execute('SELECT ST_3DDWithin(fig.bbox,reff.bbox, 0),'\
+        # tmp_conn, tmp_cur = connect_DB(us,dbname)
+        try:
+            tmp_cur.execute('SELECT ST_3DDWithin(fig.bbox,reff.bbox, 0),'\
 		                ' ST_3DIntersects(fig.bbox,reff.bbox),'\
                         ' ST_Volume(St_3DIntersection(fig.bbox,reff.bbox)),' \
 		                ' ST_Volume(fig.bbox),'\
@@ -240,9 +241,13 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
                         ' from semantic_map as reff, semantic_map as fig'\
                         ' WHERE reff.object_id = %s'\
                         ' AND fig.object_id = %s', (ref_id,figure_id))
+        except:
+            print("Query too large, server problem raised")
+            print(ref_id + " " + figure_id)
+            return qsr_graph
         #Unpack results and infer QSR predicates
         res = tmp_cur.fetchone()
-
+        # disconnect_DB(tmp_conn,tmp_cur)
         # Relations are all directed from figure to reference
         if res[0] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='touches')
         """if res[1] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='intersects')
