@@ -1,10 +1,8 @@
-# spatial-KB
-Working implementation of the commonsense spatial reasoner presented in 
-[Chiatti et al., 2021](https://arxiv.org/abs/2104.00387), which extends  [SEMAP by Deeken et al. (2018)](https://www.sciencedirect.com/science/article/pii/S0921889017306565).
-.
-
-## Dependencies
-* PostGRE with PostGIS and SFCGAL extensions  
-* ConceptNet 5 installed locally for faster inference
-* Wordnet API as exposed through the NLTK library 
-* (optional) full Visual Genome 1.4 relationship set and predicate aliases
+# Hybrid object recognition
+Working repo for hybrid reasoning pipeline (ML-based + knowledge-based) 
+which integrates two types of posthoc reasoners:
+    - a reasoner which can account for the typical size of objects
+    - a reasoner which considers the typical Qualitative Spatial Relations (QSRs) between objects 
+        
+        
+  

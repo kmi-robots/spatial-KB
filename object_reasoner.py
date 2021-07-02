@@ -121,7 +121,7 @@ class ObjectReasoner():
                         # tmp_conn, tmp_cur = connect_DB(spatialDB.db_user,
                         #                                spatialDB.dbname)  # open spatial DB connection
                         if tmp_conn.closed != 0:
-                            time.sleep(1000)#delay to avoid DB locks
+                            time.sleep(1)#delay to avoid DB locks
                             #refresh connection, closed by problematic prior query
                             tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname)
                         QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs) # in any case, alwayes extract relations with walls and floor
