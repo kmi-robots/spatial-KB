@@ -36,6 +36,7 @@ def AR(crop_dims,estim_dims, t=1.4):
     and estimated dimensions
     """
     height, width = crop_dims #used to derive the orientation
+    print("crop dimensions are %s x %s" % (str(width), str(height)))
     if height >= width:
         #h = max(d1,d2)
         #w = min(d1,d2)

@@ -28,7 +28,10 @@ class ObjectReasoner():
             self.fnames= [p.split('/')[-1].split('.')[0] for p in txti.read().splitlines()] #extract basename from imgpath
             self.taxonomy = json.load(sin)
         with open(os.path.join(args.path_to_pred, 'test-imgs.txt')) as txti:
-            self.crops = [cv2.imread(p).shape[:2] for p in txti.read().splitlines()]  # extract width and height of each 2D obj crop
+            lines = txti.read().splitlines()
+        self.crops = [os.path.join('/'.join(p.split('/')[:-1]), ('_').join(rgbname.split('_')[:-1])+'depth_'+rgbname.split('_')[-1]+'.png')\
+                          for p, rgbname in zip(lines, self.fnames)]  # extract width and height of each 2D obj crop
+        self.crops = [cv2.imread(p).shape[:2] for p in self.crops]
 
         self.predictions = np.load(('%s/test_predictions_%s.npy' % (args.path_to_pred, args.baseline)),
                                    allow_pickle=True)
@@ -48,6 +51,7 @@ class ObjectReasoner():
         indices = [k for k,f in enumerate(self.fnames) if f in idlist]
         self.fnames = [self.fnames[i] for i in indices]
         self.labels = [self.labels[i] for i in indices]
+        self.crops = [self.crops[i] for i in indices]
         self.predictions = self.predictions[indices]
         self.fnames_full = self.fnames #these full lists will not be subsampled in crossval, i.e., used to extract all QSRs nonetheless
         self.labels_full = self.labels
@@ -73,7 +77,9 @@ class ObjectReasoner():
         thin_copy = MLranks.copy()
         flatAR_copy = MLranks.copy()
         already_processed = []
+
         for fname in self.fnames:
+
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
                 #tstamp = '2020-05-15-11-03-49_655068' #'2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
@@ -117,6 +123,7 @@ class ObjectReasoner():
                     if 'size' in self.reasoner_type:
                         for oid in tbcorr:
                             d1,d2,d3 = extract_size((tmp_conn,tmp_cur),oid)# extract observed sizes based on dimensions of bbox on spatial DB
+                            print("Estimated dims oriented %f x %f x %f m" % (d1, d2, d3))
                             cropimg_shape = self.crops[self.fnames.index(oid)]
                             sres = self.size_validate([d1,d2,d3], self.lam, self.T, sizeKB, cropimg_shape)
                             candidates_num, candidates_num_flat, candidates_num_thin, candidates_num_flatAR, candidates_num_thinAR = sres
@@ -294,7 +301,9 @@ class ObjectReasoner():
                             for f,ref,r in qsr_graph.in_edges(oid, data=True) if f not in ['wall','floor']] # rels where obj is reference
 
                 elif self.spatial_label_type == 'ML':
-                    # use ground truth for nearby object (except the one being predicted)
+                    # independent from order because we collect it from the separate list self.pred_full and only modify self.predictions
+                    # at the end of validation
+                    # use ML predictions for all
                     fig_qsrs = [(pred_label, self.remapper[self.pred_full[self.fnames_full.index(ref), 0, 0]], r['QSR'])
                                 for f, ref, r in qsr_graph.out_edges(oid, data=True) if
                                 ref not in ['wall', 'floor']]  # rels where obj is figure
