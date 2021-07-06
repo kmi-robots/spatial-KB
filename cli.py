@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--path_to_data', help='Base path to raw spatial data', default='./data')
     parser.add_argument('--path_to_pred', help='Base path to ML predictions', default='./data/logged-predictions')
-    parser.add_argument('--dbname', help='Name for PostGRE SQL spatial database', default='gis_database')
+    parser.add_argument('--dbname', help='Name for PostGRE SQL spatial database', default='c')
     parser.add_argument('--scenario', nargs='?',
                         choices=['best', 'worst', 'selected'],
                         default="selected",
