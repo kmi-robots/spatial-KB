@@ -39,8 +39,7 @@ class ObjectReasoner():
         self.scenario = args.scenario
         self.filter_nulls(idlist)
         self.reasoner_type = args.rm
-        if args.rm =='size+spatial': self.spatial_label_type = 'hybrid' #enforce to use both ML and size on QSR labels
-        else: self.spatial_label_type = args.ql
+        self.spatial_label_type = args.ql
 
         #size reasoning params (autom derived from prior sorting of objects into histograms)
         self.T = [-4.149075426919093, -2.776689935975939, -1.4043044450327855, -0.0319189540896323]
@@ -304,24 +303,31 @@ class ObjectReasoner():
                 elif self.spatial_label_type == 'ML':
                     # independent from order because we collect it from the separate list self.pred_full and only modify self.predictions
                     # at the end of validation
-                    # use ML predictions for all
+                    # use ML predictions that are above conf threshold
                     fig_qsrs = [(pred_label, self.remapper[self.pred_full[self.fnames_full.index(ref), 0, 0]], r['QSR'])
                                 for f, ref, r in qsr_graph.out_edges(oid, data=True) if
-                                ref not in ['wall', 'floor']]  # rels where obj is figure
+                                ref not in ['wall', 'floor']
+                                and self.pred_full[self.fnames_full.index(ref), 0, 1] < self.epsilon_set[0]]  # rels where obj is figure
                     ref_qsrs = [(self.remapper[self.pred_full[self.fnames_full.index(f), 0, 0]], pred_label, r['QSR'])
                                 for f, ref, r in qsr_graph.in_edges(oid, data=True) if
-                                f not in ['wall', 'floor']]  # rels where obj is reference
+                                f not in ['wall', 'floor']
+                                and self.pred_full[self.fnames_full.index(f), 0, 1] < self.epsilon_set[0]]  # rels where obj is reference
 
                 elif self.spatial_label_type == 'hybrid':
-                    #option to consider already corrected predictions, if available
-                    #TODO complete this part
-                    fig_qsrs = [(pred_label, ref, r['QSR']) for f, ref, r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall', 'floor']]  # rels where obj is figure
-                    fig_qsrs = [(f,self.remapper[self.pred_full[self.fnames_full.index(ref), 0, 0]],r) for f,ref,r in fig_qsrs ]
-                    ref_qsrs = [(f, pred_label, r['QSR'])
-                                for f, ref, r in qsr_graph.in_edges(oid, data=True)
-                                if f not in ['wall', 'floor']]  # rels where obj is reference
-                    ref_qsrs = [(self.remapper[self.pred_full[self.fnames_full.index(f), 0, 0]], ref, r) for f,ref,r in ref_qsrs
-                                 if self.pred_full[self.fnames_full.index(ref), 0, 1] < self.epsilon_set[0]]
+                    # option to consider already corrected predictions, if available
+                    # discard all below conf threshold though
+
+                    fig_qsrs = [(pred_label, ref, r['QSR']) for _, ref, r in qsr_graph.out_edges(oid, data=True)
+                                if ref not in ['wall', 'floor'] and
+                                self.pred_full[self.fnames_full.index(ref), 0, 1] < self.epsilon_set[0]]  # rels where obj is figure
+                    fig_qsrs = [(f,self.remapper[self.pred_full[self.fnames_full.index(ref), 0, 0]],r)
+                                if ref not in self.fnames else (f, self.remapper[self.predictions[self.fnames.index(ref), 0, 0]], r)
+                                for f,ref,r in fig_qsrs]
+                    ref_qsrs = [(f, pred_label, r['QSR']) for f, _, r in qsr_graph.in_edges(oid, data=True) if f not in ['wall', 'floor']\
+                                and self.pred_full[self.fnames_full.index(f), 0, 1] < self.epsilon_set[0]]  # rels where obj is reference
+                    ref_qsrs = [(self.remapper[self.pred_full[self.fnames_full.index(f), 0, 0]], ref, r)
+                                if f not in self.fnames else (self.remapper[self.predictions[self.fnames.index(f),0,0]], ref, r)
+                                for f,ref,r in ref_qsrs]
 
                 #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf
                 surface_qsrs = [(pred_label,ref,r['QSR']) for f,ref,r \
