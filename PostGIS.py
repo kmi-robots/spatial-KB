@@ -224,56 +224,82 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     D is the space granularity as defined in the paper"""
     tmp_conn, tmp_cur = session
     for figure_id in figure_objs:
+        isAbove = False
+        touches = False
         if not qsr_graph.has_node(figure_id): #add new node if not already there
             qsr_graph.add_node(figure_id)
         #Use postGIS for deriving truth values of base operators
         # tmp_conn, tmp_cur = connect_DB(us,dbname)
         try:
-            tmp_cur.execute('SELECT ST_3DDWithin(fig.bbox,reff.bbox, 0),'\
-		                ' ST_3DIntersects(fig.bbox,reff.bbox),'\
-                        ' ST_Volume(St_3DIntersection(fig.bbox,reff.bbox)),' \
-		                ' ST_Volume(fig.bbox),'\
-		                ' ST_3DIntersects(fig.bbox,reff.tophsproj),ST_3DIntersects(fig.bbox,reff.bottomhsproj),'\
-		                ' ST_3DIntersects(fig.bbox,reff.lefthsproj),ST_3DIntersects(fig.bbox,reff.righthsproj),'\
-		                ' ST_3DIntersects(fig.bbox,reff.fronthsproj), ST_3DIntersects(fig.bbox,reff.backhsproj),'\
-		                ' St_Volume(ST_3DIntersection(ST_Scale(ST_3DIntersection(fig.bbox,reff.bbox),1.00001,1.00001,1.00001), fig.bbox)),'\
-		                ' St_Volume(ST_3DIntersection(ST_Scale(ST_3DIntersection(fig.bbox,reff.bbox),1.00001,1.00001,1.00001), reff.bbox))'\
-                        ' from semantic_map as reff, semantic_map as fig'\
-                        ' WHERE reff.object_id = %s'\
+            tmp_cur.execute('SELECT ST_3DDWithin(fig.bbox,reff.bbox, 0)'
+                            ' from semantic_map as reff, semantic_map as fig'
+                            ' WHERE reff.object_id = %s'\
                         ' AND fig.object_id = %s', (ref_id,figure_id))
+            res = tmp_cur.fetchone()
+            if res[0] is True:
+                qsr_graph.add_edge(figure_id, ref_id, QSR='touches')
+                touches = True
+        except Exception as e:
+            print(str(e))
+            print("Query too large, server problem raised")
+            print(ref_id + " " + figure_id)
+            return qsr_graph
+        try:
+            tmp_cur.execute('SELECT ST_3DIntersects(fig.bbox,reff.tophsproj),ST_3DIntersects(fig.bbox,reff.bottomhsproj)'
+                            ' from semantic_map as reff, semantic_map as fig'
+                            ' WHERE reff.object_id = %s' \
+                            ' AND fig.object_id = %s', (ref_id, figure_id))
+            res = tmp_cur.fetchone()
+            if res[0] is True:
+                qsr_graph.add_edge(figure_id, ref_id, QSR='above')
+                isAbove = True
+            if res[1] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='below')
         except:
             print("Query too large, server problem raised")
             print(ref_id + " " + figure_id)
             return qsr_graph
-        #Unpack results and infer QSR predicates
-        res = tmp_cur.fetchone()
-        # disconnect_DB(tmp_conn,tmp_cur)
-        # Relations are all directed from figure to reference
-        if res[0] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='touches')
-        """if res[1] is True: qsr_graph.add_edge(figure_id,ref_id, QSR='intersects')
 
-        if res[1] is True and res[3] == res[2]: #if volume of intersection very close to volume of smaller object, smaller object is completely contained
-            qsr_graph.add_edge(figure_id, ref_id, QSR='completely_contained')
-        elif res[1] is True and (res[3]-res[2])> D and res[10]<res[11]: #intersect but only partially In
-            qsr_graph.add_edge(figure_id, ref_id, QSR='partially_contained')
-        """
-        if res[4] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='above')
-        if res[5] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='below')
-        if res[6] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='leftOf')
-        if res[7] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='rightOf')
-        if res[6] is True or res[7] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='beside')
-        if res[8] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='inFrontOf')
-        if res[9] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='behind')
+        try:
+            tmp_cur.execute('SELECT ST_3DIntersects(fig.bbox,reff.lefthsproj),ST_3DIntersects(fig.bbox,reff.righthsproj)'
+                            ' from semantic_map as reff, semantic_map as fig'
+                            ' WHERE reff.object_id = %s' \
+                            ' AND fig.object_id = %s', (ref_id, figure_id))
+            res = tmp_cur.fetchone()
+            if res[0] is True:
+                qsr_graph.add_edge(figure_id, ref_id, QSR='leftOf')
+                qsr_graph.add_edge(figure_id, ref_id, QSR='beside')
+
+            if res[1] is True:
+                qsr_graph.add_edge(figure_id, ref_id, QSR='rightOf')
+                qsr_graph.add_edge(figure_id, ref_id, QSR='beside')
+
+        except:
+            print("Query too large, server problem raised")
+            print(ref_id + " " + figure_id)
+            return qsr_graph
+        try:
+            tmp_cur.execute('SELECT ST_3DIntersects(fig.bbox,reff.fronthsproj), ST_3DIntersects(fig.bbox,reff.backhsproj)'
+                            ' from semantic_map as reff, semantic_map as fig'
+                            ' WHERE reff.object_id = %s' \
+                            ' AND fig.object_id = %s', (ref_id, figure_id))
+            res = tmp_cur.fetchone()
+            if res[0] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='inFrontOf')
+
+            if res[1] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='behind')
+
+        except:
+            print("Query too large, server problem raised")
+            print(ref_id + " " + figure_id)
+            return qsr_graph
 
         #Infer more complex QSR by combining the base ones (e.g., touch and above --> on top of)
-        if res[0] is True and res[4] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='onTopOf')
+        if isAbove is True and touches is True: qsr_graph.add_edge(figure_id, ref_id, QSR='onTopOf')
         # to test the other cases of ON (affixedOn and leanOn) we need all base QSRs with other objects gathered first
 
         if not qsr_graph.has_edge(figure_id, ref_id): # If not special rel, by default/definition, they are neighbours
             qsr_graph.add_edge(figure_id, ref_id, QSR='near')
 
     return qsr_graph
-
 
 def extract_surface_QSR(session, obj_id, qsr_graph, fht=0.15, wht=0.2):
     """Extract QSRs through PostGIS
@@ -305,14 +331,13 @@ def extract_surface_QSR(session, obj_id, qsr_graph, fht=0.15, wht=0.2):
                        FROM objects_precalc
                        WHERE object_id = %s
                         """, (obj_id,))
-    res = tmp_cur.fetchall() #[0]
+    res = [r[0] for r in tmp_cur.fetchall()] #[0]
     #find the min distance to walls
     ws = min(res)
     if ws <= wht:
         qsr_graph.add_edge(obj_id, 'wall', QSR='touches')
         #qsr_graph.add_edge('wall', obj_id, QSR='touches') #also add relation in opposite direction
     return qsr_graph
-
 
 def infer_special_ON(local_graph):
     """Iterates only over QSRs in current image
