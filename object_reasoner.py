@@ -39,7 +39,8 @@ class ObjectReasoner():
         self.scenario = args.scenario
         self.filter_nulls(idlist)
         self.reasoner_type = args.rm
-        self.spatial_label_type = args.ql
+        if args.rm =='size+spatial': self.spatial_label_type = 'hybrid' #enforce to use both ML and size on QSR labels
+        else: self.spatial_label_type = args.ql
 
         #size reasoning params (autom derived from prior sorting of objects into histograms)
         self.T = [-4.149075426919093, -2.776689935975939, -1.4043044450327855, -0.0319189540896323]
@@ -69,7 +70,6 @@ class ObjectReasoner():
         print("Reasoning for correction ... ")
         start = time.time()
         tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname) #open spatial DB connection
-        walls = retrieve_walls(tmp_cur) #retrieve all walls of map first
         disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
         MLranks = self.predictions[:, :5, :] #set of only top-5 predictions for each object
         sizequal_copy = MLranks.copy() #copies for ablation study on individual size features
@@ -197,7 +197,7 @@ class ObjectReasoner():
                                 time.sleep(1)#delay to avoid DB locks
                                 #refresh connection, closed by problematic prior query
                                 tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname)
-                            QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,walls,QSRs) # in any case, alwayes extract relations with walls and floor
+                            QSRs = extract_surface_QSR((tmp_conn,tmp_cur),o_id,QSRs) # in any case, alwayes extract relations with walls and floor
                             # disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
                         # after all references in image have been examined
                         # derive special cases of ON
@@ -290,6 +290,7 @@ class ObjectReasoner():
             print(read_current_rank) #ML rank in human readable form
 
             for n, (cnum, L2dis) in enumerate(prior_rank): #for each class in the ML rank
+                #TODO if top prediction is 'person', skip?
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
 
@@ -310,6 +311,17 @@ class ObjectReasoner():
                     ref_qsrs = [(self.remapper[self.pred_full[self.fnames_full.index(f), 0, 0]], pred_label, r['QSR'])
                                 for f, ref, r in qsr_graph.in_edges(oid, data=True) if
                                 f not in ['wall', 'floor']]  # rels where obj is reference
+
+                elif self.spatial_label_type == 'hybrid':
+                    #option to consider already corrected predictions, if available
+                    #TODO complete this part
+                    fig_qsrs = [(pred_label, ref, r['QSR']) for f, ref, r in qsr_graph.out_edges(oid, data=True) if ref not in ['wall', 'floor']]  # rels where obj is figure
+                    fig_qsrs = [(f,self.remapper[self.pred_full[self.fnames_full.index(ref), 0, 0]],r) for f,ref,r in fig_qsrs ]
+                    ref_qsrs = [(f, pred_label, r['QSR'])
+                                for f, ref, r in qsr_graph.in_edges(oid, data=True)
+                                if f not in ['wall', 'floor']]  # rels where obj is reference
+                    ref_qsrs = [(self.remapper[self.pred_full[self.fnames_full.index(f), 0, 0]], ref, r) for f,ref,r in ref_qsrs
+                                 if self.pred_full[self.fnames_full.index(ref), 0, 1] < self.epsilon_set[0]]
 
                 #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf
                 surface_qsrs = [(pred_label,ref,r['QSR']) for f,ref,r \

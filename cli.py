@@ -16,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--path_to_data', help='Base path to raw spatial data', default='./data')
     parser.add_argument('--path_to_pred', help='Base path to ML predictions', default='./data/logged-predictions')
-    parser.add_argument('--dbname', help='Name for PostGRE SQL spatial database', default='c')
+    parser.add_argument('--dbname', help='Name for PostGRE SQL spatial database', default='gis_database')
     parser.add_argument('--scenario', nargs='?',
                         choices=['best', 'worst', 'selected'],
                         default="selected",
@@ -36,11 +36,12 @@ def main():
                         default="spatial",
                         help="Reasoning method to use after applying ML baseline ")
     parser.add_argument('--ql', nargs='?',
-                        choices=['gold', 'ML'],
+                        choices=['gold', 'ML', 'hybrid'],
                         default="gold",
                         help="Which labels to use for nearby objects when validating QSRs"
                              "gold: ground truth labels for all objects but the one to predict"
-                             "ML: ML predicted labels")
+                             "ML: ML predicted labels"
+                            "hybrid: ML predicted if above confidence threshold, size-validated otherwise")
 
     args = parser.parse_args()
 

@@ -1,3 +1,7 @@
+"""
+Updates spatial DB with object dimensions estimated through the open3D library
+"""
+
 import open3d as o3d
 import csv
 import numpy as np
@@ -127,6 +131,7 @@ def main():
     print("Object sizes added to semantic map")
     print("Mean processing time: %f" % float(statistics.mean(processingts)))
     print("St dev processing time: %f" % float(statistics.stdev(processingts)))
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main())

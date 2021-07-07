@@ -275,18 +275,20 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
     return qsr_graph
 
 
-def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.15, wht=0.2):
+def extract_surface_QSR(session, obj_id, qsr_graph, fht=0.15, wht=0.2):
     """Extract QSRs through PostGIS
     between current object and surfaces marked as wall/floor
     fht: threshold to find objects that are at floor height, i.e., min Z coordinate = 0
     wht: for near wall surfaces - e.g., by default 20 cm
     motivation for threshold: granularity of map/GUI for wall annotation requires tolerance
     + account that walls are modelled 2D surfaces without depth in the GIS db, i.e., needs higher value than fht
+
+    Expects a table of precomputed values formatted as per ./data/space_prep.py
     """
     tmp_conn, tmp_cur = session
     # Use postGIS for deriving truth values of base operators
-    tmp_cur.execute("""SELECT ST_Zmin(bbox)
-                    FROM semantic_map
+    tmp_cur.execute("""SELECT o_zmin
+                    FROM objects_precalc
                     WHERE object_id = %s
                     """,(obj_id,))
     # Unpack results and infer QSR predicates
@@ -299,23 +301,17 @@ def extract_surface_QSR(session, obj_id, wall_list, qsr_graph, fht=0.15, wht=0.2
         qsr_graph.add_edge('floor', obj_id, QSR='touches')
         qsr_graph.add_edge('floor', obj_id, QSR='below')
 
-    for wall_id in wall_list: #for all walls in map
-        tmp_cur.execute("""SELECT ST_3DDistance(obj.bbox,w.surface)
-                           FROM semantic_map as obj, walls as w
-                           WHERE obj.object_id = %s
-                           AND w.id = %s
-                            """, (obj_id,wall_id))
-        res = tmp_cur.fetchone()[0]
-        if res <= wht:
-            qsr_graph.add_edge(obj_id, 'wall', QSR='touches')
-            #qsr_graph.add_edge('wall', obj_id, QSR='touches') #also add relation in opposite direction
+    tmp_cur.execute("""SELECT ow_distance
+                       FROM objects_precalc
+                       WHERE object_id = %s
+                        """, (obj_id,))
+    res = tmp_cur.fetchall() #[0]
+    #find the min distance to walls
+    ws = min(res)
+    if ws <= wht:
+        qsr_graph.add_edge(obj_id, 'wall', QSR='touches')
+        #qsr_graph.add_edge('wall', obj_id, QSR='touches') #also add relation in opposite direction
     return qsr_graph
-
-
-def retrieve_walls(cursor):
-    cursor.execute(""" SELECT id
-                    from walls """)
-    return cursor.fetchall()
 
 
 def infer_special_ON(local_graph):
@@ -351,15 +347,10 @@ def infer_special_ON(local_graph):
     return local_graph
 
 def extract_size(session, obj_id):
-    # Compute object dimensions based on data in spatial db
+    # Retrieve object dimensions from spatial db
+    # Note: implies that the ./utils/size_prep.py script has already be run first
     tmp_conn, tmp_cur = session
-    tmp_cur.execute("""SELECT ST_Zmax(bbox) - ST_Zmin(bbox) as h, 
-                        ST_Distance(ST_PointN( ST_ExteriorRing( ST_OrientedEnvelope(projection_2d)), 1),
-                    ST_PointN( ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2) ) AS d1, 
-        ST_Distance(ST_PointN( ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2),
-                    ST_PointN( ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 3) ) AS d2 
-                        FROM semantic_map
-                        WHERE object_id = %s
-                        """, (obj_id,))
+    tmp_cur.execute("""SELECT d1,d2,d3 FROM semantic_map
+                        WHERE object_id = %s""", (obj_id,))
     res = tmp_cur.fetchone()
     return res[0], res[1], res[2]  #list of (d1,d2,d3)
