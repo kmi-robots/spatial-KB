@@ -31,15 +31,17 @@ def main():
     conn, cur = connect_DB(os.environ['USER'],'gis_database')
     # create index on semantic map ids first for faster access later
     cur.execute("""
-            CREATE INDEX CONCURRENTLY objid_index
+            CREATE INDEX objid_index
             on semantic_map 
             USING hash (object_id)
             """)
     conn.commit()
+    disconnect_DB(conn, cur)
 
+    conn, cur = connect_DB(os.environ['USER'], 'gis_database')
     #create table with precomputed distance to walls and object zmin
-    table_name = 'objects_precalc'
-    cur.execute("""CREATE TABLE IF NOT EXISTS %s(
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS objects_precalc(
                     record_id serial primary key,
                     object_id varchar NOT NULL,
                     wall_id varchar NOT NULL,
@@ -47,7 +49,7 @@ def main():
                     surface geometry,
                     ow_distance float,
                     o_zmin float)
-                """, (table_name,))
+                """ )
     conn.commit()
     #insert data into table
     cur.execute("""
@@ -58,16 +60,22 @@ def main():
 	where sm.object_polyhedral_surface is not null
     """)
     conn.commit()
+    disconnect_DB(conn, cur)
+
+    conn, cur = connect_DB(os.environ['USER'], 'gis_database')
     #add index on both object_id and wall_id
     cur.execute("""
-    CREATE INDEX CONCURRENTLY obj_id_index
+    CREATE INDEX obj_id_index
     on objects_precalc 
     USING hash
     (object_id)
     """)
     conn.commit()
+    disconnect_DB(conn, cur)
+
+    conn, cur = connect_DB(os.environ['USER'], 'gis_database')
     cur.execute("""
-        CREATE INDEX CONCURRENTLY wall_id_index
+        CREATE INDEX wall_id_index
         on objects_precalc 
         USING hash
         (wall_id)

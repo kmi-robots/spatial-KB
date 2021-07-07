@@ -83,11 +83,12 @@ def estimate_dims(pcd,original_pcd):
 
 def update_db(connection, cursor, filename, obj_dims):
     obj_id = filename.replace('depth', '')[:-4]
-    if any(obj_dims) is None: # no size dims to use
-        cursor.execute('UPDATE semantic_map SET d1= NULL, d2= NULL, d3=NULL '
-                       ' WHERE object_id = %s',(obj_id,))
+    d1, d2, d3 = obj_dims
+    if d1 is None: return connection,cursor # no size dims to use
+        # do nothing, already null in db
+        #cursor.execute('UPDATE semantic_map SET d1= NULL, d2= NULL, d3=NULL '
+        #               ' WHERE object_id = %s',(obj_id,))
     else:
-        d1,d2,d3 = obj_dims
         cursor.execute('UPDATE semantic_map SET d1= %s, d2= %s, d3=%s '
                    ' WHERE object_id = %s', (str(d1),str(d2),str(d3), obj_id))
     connection.commit()
@@ -110,12 +111,16 @@ def main():
 
     conn, cur = connect_DB(os.environ['USER'],'gis_database')
     for depthp,fn in depthps:
+
         start =time.time()
         depthimg = o3d.io.read_image(depthp)
         pcd = o3d.geometry.PointCloud.create_from_depth_image(depthimg, camera,depth_scale=scale, depth_trunc=scale)
         pcl_points = np.asarray(pcd.points).shape[0]
         if pcl_points <= 1:
             conn, cur = update_db(conn,cur, fn,(None,None,None))
+            print("Not enough points in pcl skipping")
+            processingts.append(float(time.time() - start))
+            continue
 
         cluster_pcl = pcl_remove_outliers(pcd)
         try:

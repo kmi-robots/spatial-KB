@@ -275,11 +275,18 @@ class ObjectReasoner():
 
         return [candidates_num, candidates_num_flat, candidates_num_thin, candidates_num_flatAR, candidates_num_thinAR]
 
-    def space_validate(self,obj_list,qsr_graph,spatialDB, K=5):
-        #
+    def space_validate(self,obj_list,qsr_graph,spatialDB, K=5, full_dim=300):
+
         for oid in obj_list: #for each object to correct/validate
             i = self.fnames.index(oid)
-            prior_rank = self.predictions[i, :K] #prior ranking @K: if spatial only it is the ML rank, if size+space already filtered by size
+            prior_rank = self.predictions[i, :]
+            if prior_rank.shape[0] == full_dim:
+                #ML predictions are used so we cap at top K to avoid data biases in QSRs
+                prior_rank = prior_rank[:5]
+            #otherwise, all object classes size filtered are used
+            print(prior_rank.shape)
+
+            #prior ranking @K: if spatial only it is the ML rank, if size+space already filtered by size
             hybrid_rank = np.copy(prior_rank)
             print("%s predicted as %s" % (self.remapper[self.labels[i]],self.remapper[prior_rank[0][0]]))
 
@@ -288,8 +295,12 @@ class ObjectReasoner():
                                  range(prior_rank.shape[0])]
             print(read_current_rank) #ML rank in human readable form
 
+            #option to reduce skew/bias towards all classes but person after spatial reasoning
+            if read_current_rank[0][0] =='person':
+                continue #skip space validation whenever top ML prediction is person
+                #people cannot be discriminated based on where they lie
+
             for n, (cnum, L2dis) in enumerate(prior_rank): #for each class in the ML rank
-                #TODO if top prediction is 'person', skip?
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
 
