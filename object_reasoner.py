@@ -75,6 +75,7 @@ class ObjectReasoner():
         flat_copy = MLranks.copy()
         thin_copy = MLranks.copy()
         flatAR_copy = MLranks.copy()
+        thinAR_copy = MLranks.copy()
         already_processed = []
 
         for fname in self.fnames:
@@ -158,7 +159,9 @@ class ObjectReasoner():
                                 print(read_rank_thinAR[:5])
 
                             ind = self.fnames.index(oid)
-                            if len(valid_rank_thinAR) > 0: MLranks[ind, :] = valid_rank_thinAR[:5, :]
+                            if len(valid_rank_thinAR) > 0:
+                                MLranks[ind, :] = valid_rank_thinAR[:5, :]
+                                thinAR_copy[ind, :] = valid_rank_thinAR[:5, :]
                             if len(valid_rank_flatAR) > 0:
                                 flatAR_copy[ind, :] = valid_rank_flatAR[:5, :]
                             thin_copy[ind, :] = valid_rank_thin[:5, :]
@@ -219,8 +222,8 @@ class ObjectReasoner():
         eval_dictionary = eval_singlemodel(self, eval_dictionary, self.reasoner_type, K=5)
         if 'size' in self.reasoner_type:
             #also print results of other combinations of size features
-            for abl, preds in list(zip(['size qual', 'size qual+flat', 'size qual+thin', 'size qual+flat+AR']\
-                    ,[sizequal_copy, flat_copy, thin_copy, flatAR_copy])):
+            for abl, preds in list(zip(['size qual', 'size qual+flat', 'size qual+thin', 'size qual+flat+AR', 'size qual+thin+AR']\
+                    ,[sizequal_copy, flat_copy, thin_copy, flatAR_copy, thinAR_copy])):
                 print("Hybrid results (%s)" % abl)
                 self.predictions = preds #ok to change self.predictions directly as in next crossval run the reasoner obj will be refreshed
                 eval_dictionary = eval_singlemodel(self, eval_dictionary, abl)
