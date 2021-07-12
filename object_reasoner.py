@@ -13,8 +13,8 @@ import cv2
 
 from evalscript import eval_singlemodel
 from PostGIS import *
-import quantizer
-from utils import graphs as ugr
+from quantizer import quantize
+# from utils import graphs as ugr
 
 
 class ObjectReasoner():
@@ -56,6 +56,7 @@ class ObjectReasoner():
         self.fnames_full = self.fnames #these full lists will not be subsampled in crossval, i.e., used to extract all QSRs nonetheless
         self.labels_full = self.labels
         self.pred_full = self.predictions
+        self.crops_full = self.crops
 
     def run(self, eval_dictionary, spatialDB, sizeKB):
         """Similarly to the proposed size reasoner, we go image by image and find the ref-figure set,
@@ -82,15 +83,15 @@ class ObjectReasoner():
 
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                #tstamp = '2020-05-15-11-03-49_655068' #'2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
+                #tstamp = '2020-05-15-11-10-34_613150' #'2020-05-15-11-03-49_655068' #'2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
                 print("============================================")
                 print("Processing img %s" % tstamp)
                 # for debugging only: visualize img
-                """import cv2
+                import cv2
                 cv2.imshow('win', cv2.imread(os.path.join('/home/agnese/bags/KMi-set-new/' \
                                                           'test/rgb', tstamp + '.jpg')))
                 cv2.waitKey(1000)
-                cv2.destroyAllWindows()"""
+                cv2.destroyAllWindows()
 
                 #QSRs are extracted for all img regions (self.fnames_full, self.labels_full)
                 QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
@@ -103,21 +104,31 @@ class ObjectReasoner():
                 img_ids = OrderedDict({key_:vol for key_,vol in img_ids.items() if key_ in self.fnames_full})#exclude those that were filtered as null
                 #subids = [self.fnames.index(key_) for key_ in img_ids.keys() if key_ in self.fnames]
                 subimg_ids = OrderedDict({key_: vol for key_, vol in img_ids.items() if
-                                          key_ in self.fnames})  # subsampled list to use for correction later#
+                                          key_ in self.fnames})  # only those which are also in the subsampled set of folds are kept
+
+                """Selecting what to correct"""
                 # which ML predictions to correct in that image?
                 # Correction is applied only for img regions in subsampled fold (self.fnames, self.labels)
                 if self.scenario == 'best':
                     # correct only ML predictions which need correction, i.e., where ML prediction differs from ground truth
                     tbcorr = [id_ for id_ in subimg_ids if self.labels[self.fnames.index(id_)] != \
                               self.predictions[self.fnames.index(id_), 0, 0]]
-                elif self.scenario == 'selected':  # select for correction, based on confidence
+                    QSRcandidates = img_ids # all count towards QSRs
+                elif self.scenario == 'selected':
                     tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
-                              >= self.epsilon_set[0]]  # where L2 distance greater than conf thresh
+                              >= self.epsilon_set[0]] # # select for correction, based on confidence, i.e., L2 distance greater than threshold
+                    #if self.spatial_label_type =='sizevalidated':
+                    #    tbcorr, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), tbcorr, sizeKB, (tmp_conn,tmp_cur)) # check which ones have a top-1 prediction which is valid wrt size
+
                 else:
                     tbcorr = img_ids  # validate all
+                    if self.spatial_label_type == 'sizevalidated':
+                        _, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), tbcorr,
+                                                                 sizeKB, (tmp_conn,
+                                                                          tmp_cur))  # check which ones have a top-1 prediction which is valid wrt size
 
                 if len(tbcorr)>0: #do reasoning/computation only if correction needed
-
+                    print("Correcting objects which are not valid wrt size")
                     """Qualitative Size Reasoning"""
                     # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
                     if 'size' in self.reasoner_type:
@@ -125,7 +136,7 @@ class ObjectReasoner():
                             d1,d2,d3 = extract_size((tmp_conn,tmp_cur),oid)# extract observed sizes based on dimensions of bbox on spatial DB
                             print("Estimated dims oriented %f x %f x %f m" % (d1, d2, d3))
                             cropimg_shape = self.crops[self.fnames.index(oid)]
-                            sres = self.size_validate([d1,d2,d3], self.lam, self.T, sizeKB, cropimg_shape)
+                            sres = self.size_validate_ranking([d1,d2,d3], self.lam, self.T, sizeKB, cropimg_shape)
                             candidates_num, candidates_num_flat, candidates_num_thin, candidates_num_flatAR, candidates_num_thinAR = sres
 
                             # Keep only ML predictions which are plausible wrt size
@@ -206,9 +217,10 @@ class ObjectReasoner():
                         QSRs = infer_special_ON(QSRs)
                         #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
                         #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
-                        self.space_validate(tbcorr, QSRs, spatialDB) # proceed with validation/correction based on spatial knowledge
+                        self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates) # proceed with validation/correction based on spatial knowledge
 
 
+                # else: print("All objects valid wrt size.. skipping correction")
                 disconnect_DB(tmp_conn, tmp_cur)
 
 
@@ -231,28 +243,32 @@ class ObjectReasoner():
 
         return eval_dictionary
 
-    def size_validate(self, estimated_dims, lam, T, KB, crop_shape):
-        depth = min(estimated_dims)   #bc KB is for all three configurations of d1,d2,d3 here we make the assumption of considering only one configuration
-        estimated_dims.remove(depth)  # i.e., the one where the min of the three is taken as depth
-        d1, d2 = estimated_dims
+    def size_select(self, sampled_imgids, all_imgids, threshold_ids, size_KB, session):
+        tbcorrected = [] # objects to be corrected in that image
+        forQSRs = [] # objects which are validated according to size and will be included in the QSR labels
+        for id_ in all_imgids:
+            d1,d2,d3 = extract_size(session, id_)
+            cropimg_shape = self.crops_full[self.fnames_full.index(id_)]
+            qual, _, aspect_ratio, thinness = quantize([d1,d2,d3], self.lam, self.T,cropimg_shape)
+            topMLpred = self.remapper[self.pred_full[self.fnames_full.index(id_), 0, 0]].replace('_',' ')
+            # does current ML prediction make sense wrt size KB?
+            background = size_KB[topMLpred]
+            judgments = self.size_validate_single(qual, thinness, aspect_ratio, background)
+            if all(judgments): # validated based on all 3 size features
+                forQSRs.append(id_) # note, all objects count for qsrs
+            else: # otherwise, it will be corrected
+                if id_ in sampled_imgids and id_ in threshold_ids:  #if also in current kfold sample then can be corrected/ count for evaluation, otherwise skip
+                    tbcorrected.append(id_)
+        return tbcorrected, forQSRs
 
-        """ size quantization: from quantitative dims to qualitative labels"""
-        qual = quantizer.size_qual(d1, d2, thresholds=T)
-        flat = quantizer.flat(depth, len_thresh=lam[0])
-        flat_flag = 'flat' if flat else 'non flat'
-        # Aspect ratio based on crop
-        aspect_ratio = quantizer.AR(crop_shape, (d1, d2))
-        thinness = quantizer.thinness(depth, cuts=lam)
-        cluster = qual + "-" + thinness
+    def size_validate_single(self, qual, thinness, AR, background):
+        return [str(qual) in str(background["has_size"]), str(thinness) in str(background["has_size"]), str(AR) in str(background["aspect_ratio"])]
 
-        print("Detected size is %s" % qual)
-        print("Object is %s" % flat_flag)
-        print("Object is %s" % aspect_ratio)
-        print("Object is %s" % thinness)
+    def size_validate_ranking(self, estimated_dims, lam, T, KB, crop_shape):
 
+        qual, flat, aspect_ratio, thinness = quantize(estimated_dims, lam, T, crop_shape)
         """ Hybrid (area) """
-        candidates = [oname for oname in KB.keys() if qual in str(
-            KB[oname]["has_size"])]  # len([s for s in self.KB[oname]["has_size"] if s.startswith(qual)])>0]
+        candidates = [oname for oname in KB.keys() if qual in str(KB[oname]["has_size"])]  # len([s for s in self.KB[oname]["has_size"] if s.startswith(qual)])>0]
         candidates_num = [self.mapper[oname.replace(' ', '_')] for oname in candidates]
 
         """ Hybrid (area + flat) """
@@ -262,7 +278,6 @@ class ObjectReasoner():
         """ Hybrid (area + thin) """
         try:
             candidates_thin = [oname for oname in candidates if thinness in str(KB[oname]["thinness"])]
-
         except KeyError:  # annotation format variation
             candidates_thin = [oname for oname in candidates if thinness in str(KB[oname]["has_size"])]
 
@@ -278,10 +293,9 @@ class ObjectReasoner():
 
         return [candidates_num, candidates_num_flat, candidates_num_thin, candidates_num_flatAR, candidates_num_thinAR]
 
-    def space_validate(self,obj_list,qsr_graph,spatialDB, K=5, full_dim=300):
+    def space_validate(self,obj_list,qsr_graph,spatialDB, sizevalidated_ids, K=5):
 
         for oid in obj_list: #for each object to correct/validate
-            #TODO find better strategy to integrate the three
             i = self.fnames.index(oid)
             prior_rank = self.predictions[i, :K]
 
@@ -302,7 +316,6 @@ class ObjectReasoner():
             for n, (cnum, L2dis) in enumerate(prior_rank): #for each class in the ML rank
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
-
                 if self.spatial_label_type == 'gold':
                     # use ground truth for nearby object (except the one being predicted)
                     fig_qsrs = [(pred_label,self.remapper[self.labels_full[self.fnames_full.index(ref)]],r['QSR'])
@@ -322,6 +335,14 @@ class ObjectReasoner():
                                 for f, ref, r in qsr_graph.in_edges(oid, data=True) if
                                 f not in ['wall', 'floor']
                                 and self.pred_full[self.fnames_full.index(f), 0, 1] < self.epsilon_set[0]]  # rels where obj is reference
+
+                elif self.spatial_label_type == 'sizevalidated':
+                    fig_qsrs = [(pred_label, self.remapper[self.pred_full[self.fnames_full.index(ref), 0, 0]], r['QSR'])
+                                for f, ref, r in qsr_graph.out_edges(oid, data=True) if
+                                ref in sizevalidated_ids]
+                    ref_qsrs = [(self.remapper[self.pred_full[self.fnames_full.index(f), 0, 0]], pred_label, r['QSR'])
+                                for f, ref, r in qsr_graph.in_edges(oid, data=True) if
+                                f in sizevalidated_ids]
 
                 elif self.spatial_label_type == 'hybrid':
                     # option to consider already corrected predictions, if available
@@ -343,6 +364,11 @@ class ObjectReasoner():
                 surface_qsrs = [(pred_label,ref,r['QSR']) for f,ref,r \
                                 in qsr_graph.out_edges(oid, data=True) if ref in ['wall','floor']] #only those in fig/ref form
                 fig_qsrs.extend(surface_qsrs) # merge into list of fig/ref relations
+
+                print("Figure-Ref QSRS are")
+                print(fig_qsrs)
+                print("Ref-Figure QSRS are")
+                print(ref_qsrs)
 
                 if not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0): #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
                     # we skip people as they are mobile and can be anywhere, space is not discriminating
@@ -412,6 +438,7 @@ class ObjectReasoner():
                 continue
 
     def compute_all_scores(self, spatialDB, all_scores, sub_syn, obj_syn, r):
+
         if len(sub_syn) > 1 or len(obj_syn) > 1:
             if len(sub_syn) > 1 and len(obj_syn) > 1:  # try all sub,obj ordered combos
                 # print(list(itertools.product(sub_syn, obj_syn)))
@@ -436,6 +463,7 @@ class ObjectReasoner():
             typscore = self.compute_typicality_score(spatialDB, sub_syn, obj_syn, r)
         all_scores.append((1. - typscore))  # track INVERSE of score (so that it is comparable
         # with L2 distances, i.e., scores that are minimised)
+        print("Jaccard distance: %f" % (1. - typscore))
         return all_scores
 
     def compute_typicality_score(self,spatialDB,sub_syn,obj_syn,rel, use_beside=False, use_near=False):

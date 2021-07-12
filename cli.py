@@ -36,7 +36,7 @@ def main():
                         default="spatial",
                         help="Reasoning method to use after applying ML baseline ")
     parser.add_argument('--ql', nargs='?',
-                        choices=['gold', 'ML', 'hybrid'],
+                        choices=['gold', 'ML', 'hybrid', 'sizevalidated'],
                         default="gold",
                         help="Which labels to use for nearby objects when validating QSRs"
                              "gold: ground truth labels for all objects but the one to predict"
