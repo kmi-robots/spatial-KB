@@ -71,12 +71,12 @@ class ObjectReasoner():
         start = time.time()
         tmp_conn, tmp_cur = connect_DB(spatialDB.db_user, spatialDB.dbname) #open spatial DB connection
         disconnect_DB(tmp_conn, tmp_cur)  # close spatial DB connection
-        MLranks = self.predictions[:, :5, :] #set of only top-5 predictions for each object
-        sizequal_copy = MLranks.copy() #copies for ablation study on individual size features
-        flat_copy = MLranks.copy()
-        thin_copy = MLranks.copy()
-        flatAR_copy = MLranks.copy()
-        thinAR_copy = MLranks.copy()
+        sizeranks = self.predictions[:, :5, :] #set of only top-5 predictions for each object
+        sizequal_copy = sizeranks.copy() #copies for ablation study on individual size features
+        flat_copy = sizeranks.copy()
+        thin_copy = sizeranks.copy()
+        flatAR_copy = sizeranks.copy()
+        thinAR_copy = sizeranks.copy()
         already_processed = []
 
         for fname in self.fnames:
@@ -87,11 +87,11 @@ class ObjectReasoner():
                 print("============================================")
                 print("Processing img %s" % tstamp)
                 # for debugging only: visualize img
-                import cv2
+                """import cv2
                 cv2.imshow('win', cv2.imread(os.path.join('/home/agnese/bags/KMi-set-new/' \
                                                           'test/rgb', tstamp + '.jpg')))
                 cv2.waitKey(1000)
-                cv2.destroyAllWindows()
+                cv2.destroyAllWindows()"""
 
                 #QSRs are extracted for all img regions (self.fnames_full, self.labels_full)
                 QSRs = nx.MultiDiGraph() # all QSRs tracked in directed multi-graph (each node pair can have more than one connecting edge, edges are directed)
@@ -117,15 +117,14 @@ class ObjectReasoner():
                 elif self.scenario == 'selected':
                     tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
                               >= self.epsilon_set[0]] # # select for correction, based on confidence, i.e., L2 distance greater than threshold
-                    #if self.spatial_label_type =='sizevalidated':
-                    #    tbcorr, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), tbcorr, sizeKB, (tmp_conn,tmp_cur)) # check which ones have a top-1 prediction which is valid wrt size
+                    neg_tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
+                              < self.epsilon_set[0]]
+                    if self.spatial_label_type =='sizevalidated':
+                        tbcorr, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), neg_tbcorr, sizeKB, (tmp_conn,tmp_cur)) # check which ones have a top-1 prediction which is valid wrt size
 
                 else:
                     tbcorr = img_ids  # validate all
-                    if self.spatial_label_type == 'sizevalidated':
-                        _, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), tbcorr,
-                                                                 sizeKB, (tmp_conn,
-                                                                          tmp_cur))  # check which ones have a top-1 prediction which is valid wrt size
+                    QSRcandidates = img_ids
 
                 if len(tbcorr)>0: #do reasoning/computation only if correction needed
                     print("Correcting objects which are not valid wrt size")
@@ -158,10 +157,10 @@ class ObjectReasoner():
                             print(read_rank_ML[:5])
                             print("Knowledge validated ranking (area)")
                             print(read_rank_area[:5])
-                            print("Knowledge validated ranking (area + flat)")
-                            print(read_rank_flat[:5])
-                            print("Knowledge validated ranking (area + thin)")
-                            print(read_rank_thin[:5])
+                            #print("Knowledge validated ranking (area + flat)")
+                            #print(read_rank_flat[:5])
+                            #print("Knowledge validated ranking (area + thin)")
+                            #print(read_rank_thin[:5])
                             if candidates_num_flatAR is not None:
                                 print("Knowledge validated ranking (area + flat + AR)")
                                 print(read_rank_flatAR[:5])
@@ -171,7 +170,7 @@ class ObjectReasoner():
 
                             ind = self.fnames.index(oid)
                             if len(valid_rank_thinAR) > 0:
-                                MLranks[ind, :] = valid_rank_thinAR[:5, :]
+                                sizeranks[ind, :] = valid_rank_thinAR[:5, :]
                                 thinAR_copy[ind, :] = valid_rank_thinAR[:5, :]
                             if len(valid_rank_flatAR) > 0:
                                 flatAR_copy[ind, :] = valid_rank_flatAR[:5, :]
@@ -179,7 +178,7 @@ class ObjectReasoner():
                             sizequal_copy[ind, :] = valid_rank[:5, :]  # _thin[:5,:]
                             flat_copy[ind, :] = valid_rank_flat[:5, :]
 
-                            self.predictions[ind, :5] = MLranks[ind, :] # change ML predictions
+                            self.predictions[ind, :5] = sizeranks[ind, :] # change ML predictions
                         if self.reasoner_type=='size':
                             continue #skip spatial reasoning steps
 
@@ -249,15 +248,21 @@ class ObjectReasoner():
         for id_ in all_imgids:
             d1,d2,d3 = extract_size(session, id_)
             cropimg_shape = self.crops_full[self.fnames_full.index(id_)]
-            qual, _, aspect_ratio, thinness = quantize([d1,d2,d3], self.lam, self.T,cropimg_shape)
+            #qual, _, aspect_ratio, thinness = quantize([d1,d2,d3], self.lam, self.T,cropimg_shape)
             topMLpred = self.remapper[self.pred_full[self.fnames_full.index(id_), 0, 0]].replace('_',' ')
             # does current ML prediction make sense wrt size KB?
             background = size_KB[topMLpred]
-            judgments = self.size_validate_single(qual, thinness, aspect_ratio, background)
-            if all(judgments): # validated based on all 3 size features
-                forQSRs.append(id_) # note, all objects count for qsrs
-            else: # otherwise, it will be corrected
-                if id_ in sampled_imgids and id_ in threshold_ids:  #if also in current kfold sample then can be corrected/ count for evaluation, otherwise skip
+            _,_,_,_,allthree_rank = self.size_validate_ranking([d1,d2,d3],self.lam,self.T,size_KB,cropimg_shape)#self.size_validate_single(qual, thinness, aspect_ratio, background)
+            full_vision_rank = self.pred_full[self.fnames_full.index(id_)]
+            valid_rank_thinAR = full_vision_rank[[full_vision_rank[z, 0] in allthree_rank for z in range(full_vision_rank.shape[0])]]
+            topsizepred = self.remapper[valid_rank_thinAR[0,0]].replace('_',' ')
+            # if the size ranking with all 3 features agrees on the top prediction
+            # OR machine learning is above conf threshold
+            # do not correct and add to QSR label pool
+            if topsizepred == topMLpred or id_ in threshold_ids: #all(judgments): # validated based on all 3 size features
+                forQSRs.append(id_) # note, all objects count for QSRs, provided there is agreement between ML and size
+            else: # otherwise, it will be corrected, if in current subsample list
+                if id_ in sampled_imgids:
                     tbcorrected.append(id_)
         return tbcorrected, forQSRs
 
@@ -365,10 +370,10 @@ class ObjectReasoner():
                                 in qsr_graph.out_edges(oid, data=True) if ref in ['wall','floor']] #only those in fig/ref form
                 fig_qsrs.extend(surface_qsrs) # merge into list of fig/ref relations
 
-                print("Figure-Ref QSRS are")
+                """print("Figure-Ref QSRS are")
                 print(fig_qsrs)
                 print("Ref-Figure QSRS are")
-                print(ref_qsrs)
+                print(ref_qsrs)"""
 
                 if not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0): #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
                     # we skip people as they are mobile and can be anywhere, space is not discriminating
@@ -463,7 +468,7 @@ class ObjectReasoner():
             typscore = self.compute_typicality_score(spatialDB, sub_syn, obj_syn, r)
         all_scores.append((1. - typscore))  # track INVERSE of score (so that it is comparable
         # with L2 distances, i.e., scores that are minimised)
-        print("Jaccard distance: %f" % (1. - typscore))
+        #print("Jaccard distance: %f" % (1. - typscore))
         return all_scores
 
     def compute_typicality_score(self,spatialDB,sub_syn,obj_syn,rel, use_beside=False, use_near=False):
