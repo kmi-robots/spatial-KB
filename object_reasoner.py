@@ -10,6 +10,7 @@ import time
 import statistics
 import networkx as nx
 import cv2
+from collections import Counter
 
 from evalscript import eval_singlemodel
 from PostGIS import *
@@ -83,7 +84,7 @@ class ObjectReasoner():
 
             tstamp = '_'.join(fname.split('_')[:-1])
             if tstamp not in already_processed: #first time regions of that image are found.. extract all QSRs
-                #tstamp = '2020-05-15-11-10-34_613150' #'2020-05-15-11-03-49_655068' #'2020-05-15-11-00-26_957234' #'2020-05-15-11-24-02_927379' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
+                #tstamp = '2020-05-15-11-03-55_874916' #'2020-05-15-11-02-54_646666'  # test/debug/single_snap image
                 print("============================================")
                 print("Processing img %s" % tstamp)
                 # for debugging only: visualize img
@@ -119,9 +120,8 @@ class ObjectReasoner():
                               >= self.epsilon_set[0]] # # select for correction, based on confidence, i.e., L2 distance greater than threshold
                     neg_tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
                               < self.epsilon_set[0]]
-                    if self.spatial_label_type =='sizevalidated':
+                    if self.reasoner_type =='size_spatial':
                         tbcorr, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), neg_tbcorr, sizeKB, (tmp_conn,tmp_cur)) # check which ones have a top-1 prediction which is valid wrt size
-
                 else:
                     tbcorr = img_ids  # validate all
                     QSRcandidates = img_ids
@@ -170,16 +170,17 @@ class ObjectReasoner():
 
                             ind = self.fnames.index(oid)
                             if len(valid_rank_thinAR) > 0:
-                                sizeranks[ind, :] = valid_rank_thinAR[:5, :]
+                                #sizeranks[ind, :] = valid_rank_thinAR[:5, :]
                                 thinAR_copy[ind, :] = valid_rank_thinAR[:5, :]
                             if len(valid_rank_flatAR) > 0:
                                 flatAR_copy[ind, :] = valid_rank_flatAR[:5, :]
                             thin_copy[ind, :] = valid_rank_thin[:5, :]
                             sizequal_copy[ind, :] = valid_rank[:5, :]  # _thin[:5,:]
                             flat_copy[ind, :] = valid_rank_flat[:5, :]
-
-                            self.predictions[ind, :5] = sizeranks[ind, :] # change ML predictions
+                            #changed, keep size and ML predictions separate, unless, size only
+                            # self.predictions[ind, :5] = sizeranks[ind, :] # change ML predictions
                         if self.reasoner_type=='size':
+                            self.predictions[ind, :5] = valid_rank_thinAR[:5, :] #sizeranks[ind, :]  # change ML predictions
                             continue #skip spatial reasoning steps
 
                     """Qualitative Spatial Reasoning"""
@@ -216,8 +217,10 @@ class ObjectReasoner():
                         QSRs = infer_special_ON(QSRs)
                         #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
                         #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
-                        self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates) # proceed with validation/correction based on spatial knowledge
-
+                        if self.reasoner_type=='size_spatial':
+                            self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates, sizerank=thinAR_copy) #pass prior size ranking too
+                        else:
+                            self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates) # proceed with validation/correction based on spatial knowledge
 
                 # else: print("All objects valid wrt size.. skipping correction")
                 disconnect_DB(tmp_conn, tmp_cur)
@@ -298,29 +301,43 @@ class ObjectReasoner():
 
         return [candidates_num, candidates_num_flat, candidates_num_thin, candidates_num_flatAR, candidates_num_thinAR]
 
-    def space_validate(self,obj_list,qsr_graph,spatialDB, sizevalidated_ids, K=5):
+    def space_validate(self,obj_list,qsr_graph,spatialDB, sizevalidated_ids, K=5, sizerank=None):
 
         for oid in obj_list: #for each object to correct/validate
             i = self.fnames.index(oid)
-            prior_rank = self.predictions[i, :K]
-
-            #prior ranking @K: if spatial only it is the ML rank, if size+space already filtered by size
-            hybrid_rank = np.copy(prior_rank)
-            print("%s predicted as %s" % (self.remapper[self.labels[i]],self.remapper[prior_rank[0][0]]))
+            ML_rank = self.predictions[i, :K]
+            spatialforML = np.copy(ML_rank)
+            if sizerank is not None:  #both size and ML are leveraged, spatial acts as 3rd judgement
+                size_rank = sizerank[i,:K]
+                spatialforsize = np.copy(size_rank)
+                if self.remapper[size_rank[0][0]] =='person': #skip space validation whenever top ML prediction is person
+                #people cannot be discriminated based on where they lie
+                    self.predictions[i, :K] = size_rank
+                    print("top size prediction is person, skipping spatial validation")
+                    continue
+            #hybrid_rank = np.copy(ML_rank)
+            print("%s predicted as %s" % (self.remapper[self.labels[i]],self.remapper[ML_rank[0][0]]))
 
             print("Top-5 before spatial validation: ")
-            read_current_rank = [(self.remapper[prior_rank[z, 0]], prior_rank[z, 1]) for z in
-                                 range(prior_rank.shape[0])]
+            read_current_rank = [(self.remapper[ML_rank[z, 0]], ML_rank[z, 1]) for z in
+                                 range(ML_rank.shape[0])]
             print(read_current_rank) #ML rank in human readable form
 
             #option to reduce skew/bias towards all classes but person after spatial reasoning
             if read_current_rank[0][0] =='person':
+                print("top ML prediction is person, skipping spatial validation")
                 continue #skip space validation whenever top ML prediction is person
                 #people cannot be discriminated based on where they lie
 
-            for n, (cnum, L2dis) in enumerate(prior_rank): #for each class in the ML rank
+            for n, (cnum, L2dis) in enumerate(ML_rank): #for each class in the ML rank
                 pred_label = self.remapper[cnum]
                 wn_syn = self.taxonomy[pred_label] #wordnet synset for that label
+
+                if sizerank is not None:
+                    sclass, _ = size_rank[n]
+                    size_label = self.remapper[sclass]
+                    wn_syn_size = self.taxonomy[size_label]
+
                 if self.spatial_label_type == 'gold':
                     # use ground truth for nearby object (except the one being predicted)
                     fig_qsrs = [(pred_label,self.remapper[self.labels_full[self.fnames_full.index(ref)]],r['QSR'])
@@ -375,16 +392,24 @@ class ObjectReasoner():
                 print("Ref-Figure QSRS are")
                 print(ref_qsrs)"""
 
-                if not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0): #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
+                if sizerank is not None and \
+                        (not wn_syn_size or size_label=='person' or not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0)):
+                    spatialforsize[n][1] = 1.
+                    spatialforML[n][1] = 1.
+                    continue
+                elif sizerank is None and \
+                        (not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0)): #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
                     # we skip people as they are mobile and can be anywhere, space is not discriminating
                     # OR there are no QSRs to consider
-                    #add up 1. as if not found to not alter ML ranking and skip
-                    hybrid_rank[n][1] += 1.
+                    spatialforML[n][1] += 1. #added up to ML #add up 1. as if not found to not alter prior ranking and skip
                     continue
 
                 #Tipicality scores based on VG stats
-                sub_syn = self.taxonomy[pred_label]
+                sub_syn = wn_syn
                 all_spatial_scores = []
+                if sizerank is not None:
+                    sub_syn_size = wn_syn_size
+                    all_spatial_scores_size = []
                 fig_rs = list(set([r for _,_,r in fig_qsrs])) #distinct figure relations present
                 for _,ref,r in fig_qsrs: #for each QSR where obj is figure, i.e., subject
                     if ref=='wall': obj_syn = ['wall.n.01'] #cases where reference is wall or floor
@@ -392,19 +417,26 @@ class ObjectReasoner():
                     else: obj_syn = self.taxonomy[ref]
                     if obj_syn =='': #reference obj is e.g., foosball table or pigeon holes (absent from background KB)
                         all_spatial_scores.append(1.) #add up 1. as if not found to not alter ML ranking and skip
+                        if sizerank is not None:
+                            all_spatial_scores_size.append(1.)
                         continue
                     if r == 'touches':
                         if len(fig_rs) ==1: # touches is the only rel
                             all_spatial_scores.append(1.)  # add up 1. as if not found to not alter ML ranking and skip
+                            if sizerank is not None:
+                                all_spatial_scores_size.append(1.)
                             continue
                         else: continue #there are other types, just skip this one as not relevant for VG
                     elif r=='beside':
                         continue #beside already checked through L/R rel
                     elif r == 'leansOn' or r == 'affixedOn': r = 'against'  # mapping on VG predicate
                     all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores,sub_syn, obj_syn,r)
+                    if sizerank is not None:
+                        all_spatial_scores_size = self.compute_all_scores(spatialDB, all_spatial_scores_size,sub_syn_size, obj_syn,r)
 
                 # Similarly, for QSRs where predicted obj is reference, i.e., object
-                obj_syn = self.taxonomy[pred_label]
+                obj_syn = wn_syn #self.taxonomy[pred_label]
+                if sizerank is not None: obj_syn_size = wn_syn_size#self.taxonomy[size_label]
                 ref_rs = list(set([r for _, _, r in ref_qsrs]))  # distinct figure relations present
                 for fig,_,r in ref_qsrs:
                     if fig=='wall': sub_syn = ['wall.n.01'] #cases where reference is wall or floor
@@ -412,35 +444,95 @@ class ObjectReasoner():
                     else: sub_syn = self.taxonomy[fig]
                     if sub_syn =='': #figure obj is e.g., foosball table or pigeon holes (absent from background KB)
                         all_spatial_scores.append(1.) #add up 1. as if not found to not alter ML ranking and skip
+                        if sizerank is not None:
+                            all_spatial_scores_size.append(1.)
                         continue
                     if r == 'touches':
                         if len(ref_rs) ==1: # touches is the only rel
                             all_spatial_scores.append(1.)  # add up 1. as if not found to not alter ML ranking and skip
+                            if sizerank is not None:
+                                all_spatial_scores_size.append(1.)
                             continue
                         else: continue #there are other types, just skip this one as not relevant for VG
                     elif r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
                     elif r =='leansOn' or r=='affixedOn': r = 'against' #mapping on VG predicate
                     all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores, sub_syn, obj_syn, r)
+                    if sizerank is not None:
+                        all_spatial_scores_size = self.compute_all_scores(spatialDB, all_spatial_scores_size, sub_syn, obj_syn_size, r)
 
                 # Average across all QSRs
                 avg_spatial_score = statistics.mean(all_spatial_scores)
-                hybrid_rank[n][1] += avg_spatial_score # add up to ML score
+                if sizerank is not None:
+                    # changed: rewrite original score instead of adding up
+                    spatialforML[n][1] = avg_spatial_score
+                    avg_spatial_score_size = statistics.mean(all_spatial_scores_size)
+
+                    # changed: rewrite original score instead of adding up
+                    spatialforsize[n][1] = avg_spatial_score_size
+                else:
+                    spatialforML[n][1] += avg_spatial_score  # add up to ML score
+
 
             # Normalise scores across classes, so it is between 0 and 1
             # minmax norm
-            scores = hybrid_rank[:,1]
+            scores = spatialforML[:,1]
             min_, max_ = np.min(scores), np.max(scores)
-            hybrid_rank[:, 1] = np.array([(x-min_)/(max_ - min_) for x in scores])
-            posthoc_rank = hybrid_rank[np.argsort(hybrid_rank[:, 1])] # order by score ascending
+            if max_ - min_ !=0: #avoid division by zero
+                spatialforML[:, 1] = np.array([(x-min_)/(max_ - min_) for x in scores])
+            posthoc_rank = spatialforML[np.argsort(spatialforML[:, 1])] # order by score ascending
             # ranking after correction is ..
-            print("Top-5 after spatial validation: ")
+            print("Top-5 after spatial validation on ML rank: ")
             read_phoc_rank = [(self.remapper[posthoc_rank[z, 0]], posthoc_rank[z, 1]) for z in range(posthoc_rank.shape[0])]
             print(read_phoc_rank)  # posthoc rank in human readable form
-            # replace predictions at that index with corrected predictions
-            self.predictions[i, :K] = posthoc_rank
-            if read_phoc_rank[0][0] != read_current_rank[0][0]:
-                print("something changed after spatial reasoning")
-                continue
+
+            #add plausible spatial objects to joint voting
+            if sizerank is not None:
+                spatial_classes = [cnum for cnum,jdis in posthoc_rank if jdis < 1.]
+                scores = spatialforsize[:, 1]
+                min_, max_ = np.min(scores), np.max(scores)
+                if max_ - min_ != 0:  # avoid division by zero
+                    spatialforsize[:, 1] = np.array([(x - min_) / (max_ - min_) for x in scores])
+                posthoc_rank_size = spatialforsize[np.argsort(spatialforsize[:, 1])]  # order by score ascending
+                print("Top-5 after spatial validation on size rank: ")
+                read_phoc_rank_size = [(self.remapper[posthoc_rank_size[z, 0]], posthoc_rank_size[z, 1]) for z in
+                                  range(posthoc_rank_size.shape[0])]
+                print(read_phoc_rank_size)  # posthoc rank in human readable form
+                spatial_classes.extend([cnum for cnum, jdis in posthoc_rank_size if jdis < 1.])
+                if len(spatial_classes)==0:
+                    #there were no useful scores through spatial reasoning
+                    self.predictions[i, :K] = size_rank
+                    print("Keep size ranking")
+                    continue
+                votes = Counter(spatial_classes)
+                #Fill up list with duplicates in order from most common to least common
+                # so that final ranking is still K positions long
+                finrank_list = []
+                foundwinner = False
+                for k, (l, num) in enumerate(votes.most_common(K)):
+                    if k==0 and num ==1: #there is no clear winner,
+                        #keep original ML predictions, i.e., do not change self.predictions and skip
+                        break
+                    remaining_spots = K - len(finrank_list)
+                    if num<= remaining_spots: cap = num
+                    else: cap = remaining_spots
+                    for r in range(cap): finrank_list.append((l,0.))
+                    remaining_spots = K - len(finrank_list)
+                    if remaining_spots==0: #reached end of topK
+                        foundwinner = True
+                        break #stop at topK
+                if foundwinner: final_rank = np.array(finrank_list,dtype='object') #order by number of votes
+                else:
+                    self.predictions[i, :K] = size_rank
+                    print("Keep size validated ranking")
+                    continue
+            else:
+                # use spatial ranking combined with Ml score directly
+                final_rank = posthoc_rank
+            self.predictions[i, :K] = final_rank
+            print("Final top-5: ")
+            read_final_rank = [self.remapper[final_rank[z, 0]] for z in range(final_rank.shape[0])]
+            print(read_final_rank)
+            continue
 
     def compute_all_scores(self, spatialDB, all_scores, sub_syn, obj_syn, r):
 
