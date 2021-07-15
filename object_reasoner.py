@@ -123,6 +123,7 @@ class ObjectReasoner():
                               < self.epsilon_set[0]]
                     if self.reasoner_type =='size_spatial':
                         tbcorr, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), neg_tbcorr, sizeKB, (tmp_conn,tmp_cur)) # check which ones have a top-1 prediction which is valid wrt size
+                    else: QSRcandidates = img_ids
                 else:
                     tbcorr = img_ids  # validate all
                     QSRcandidates = img_ids
