@@ -11,6 +11,7 @@ import statistics
 import networkx as nx
 import cv2
 from collections import Counter
+import random
 
 from evalscript import eval_singlemodel
 from PostGIS import *
@@ -129,7 +130,15 @@ class ObjectReasoner():
                 if len(tbcorr)>0: #do reasoning/computation only if correction needed
                     print("Correcting objects which are not valid wrt size")
                     """Qualitative Size Reasoning"""
-                    # Note: imgs with empty pcls or not enough points were skipped in prior size reasoning exps
+                    if self.reasoner_type =='random':
+                        #simply changes ranking at random, with the option to repeat the same class name more than once
+                        all_classes= list(self.remapper.keys())
+                        dim =self.predictions.shape[1]
+                        for oid in tbcorr:
+                            ind = self.fnames.index(oid)
+                            random_labels = [str(random.randint(1, len(all_classes))) for x in range(dim)]
+                            self.predictions[ind,:,0] = np.array(random_labels)
+
                     if 'size' in self.reasoner_type:
                         for oid in tbcorr:
                             d1,d2,d3 = extract_size((tmp_conn,tmp_cur),oid)# extract observed sizes based on dimensions of bbox on spatial DB

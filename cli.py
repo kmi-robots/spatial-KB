@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--nsplits', type=int, default=7,
                         help="Number of folds for Kfold cross validation. Defaults to 7.")
     parser.add_argument('--rm', nargs='?',
-                        choices=['spatial', 'size', 'size_spatial'],
+                        choices=['spatial', 'size', 'size_spatial', 'random'],
                         default="spatial",
                         help="Reasoning method to use after applying ML baseline ")
     parser.add_argument('--ql', nargs='?',
