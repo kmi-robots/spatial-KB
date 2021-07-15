@@ -231,7 +231,7 @@ class ObjectReasoner():
         eval_dictionary[self.reasoner_type]['processingTime'].append(procTime)
 
         #Re-eval post correction
-        print("Hybrid results %s" % self.reasoner_type)
+        print("Hybrid results (%s)" % self.reasoner_type)
         eval_dictionary = eval_singlemodel(self, eval_dictionary, self.reasoner_type)
         eval_dictionary = eval_singlemodel(self, eval_dictionary, self.reasoner_type, K=5)
         if 'size' in self.reasoner_type:
