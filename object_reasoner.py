@@ -532,7 +532,7 @@ class ObjectReasoner():
             print("Final top-5: ")
             read_final_rank = [self.remapper[final_rank[z, 0]] for z in range(final_rank.shape[0])]
             print(read_final_rank)
-            continue
+
 
     def compute_all_scores(self, spatialDB, all_scores, sub_syn, obj_syn, r):
 
