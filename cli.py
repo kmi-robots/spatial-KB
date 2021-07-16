@@ -42,6 +42,9 @@ def main():
                              "gold: ground truth labels for all objects but the one to predict"
                              "ML: ML predicted labels"
                             "hybrid: ML predicted if above confidence threshold, size-validated otherwise")
+    parser.add_argument('--withML', type=str2bool, nargs='?', const=True, default=True,
+                        help='applies reasoning on ML ranking of predictions, if True'
+                        'otherwise tries to guess objects purely through knowledge-based reasoning')
 
     args = parser.parse_args()
 
@@ -80,6 +83,15 @@ def main():
     with open(os.path.join(args.path_to_data, 'eval_results_%s_%s_%s' % (args.baseline, args.set, args.rm)), 'w') as jout:
         json.dump(avg_res, jout)
     return 0
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else: raise argparse.ArgumentTypeError('Boolean value expected.')
 
 if __name__ == '__main__':
     sys.exit(main())

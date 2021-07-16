@@ -39,9 +39,11 @@ class ObjectReasoner():
                                    allow_pickle=True)
         self.remapper = dict((v, k) for k, v in self.mapper.items())  # swap keys with indices
         self.scenario = args.scenario
-        self.filter_nulls(idlist)
         self.reasoner_type = args.rm
         self.spatial_label_type = args.ql
+        self.withML = args.withML
+        #filter out objects with no depth data associated in the spatial DB
+        self.filter_nulls(idlist)
 
         #size reasoning params (autom derived from prior sorting of objects into histograms)
         self.T = [-4.149075426919093, -2.776689935975939, -1.4043044450327855, -0.0319189540896323]
@@ -142,56 +144,63 @@ class ObjectReasoner():
 
                     if 'size' in self.reasoner_type:
                         for oid in tbcorr:
+                            ind = self.fnames.index(oid)
                             d1,d2,d3 = extract_size((tmp_conn,tmp_cur),oid)# extract observed sizes based on dimensions of bbox on spatial DB
-                            print("Estimated dims oriented %f x %f x %f m" % (d1, d2, d3))
+                            # print("Estimated dims oriented %f x %f x %f m" % (d1, d2, d3))
                             cropimg_shape = self.crops[self.fnames.index(oid)]
                             sres = self.size_validate_ranking([d1,d2,d3], self.lam, self.T, sizeKB, cropimg_shape)
                             candidates_num, candidates_num_flat, candidates_num_thin, candidates_num_flatAR, candidates_num_thinAR = sres
 
-                            # Keep only ML predictions which are plausible wrt size
-                            full_vision_rank = self.predictions[self.fnames.index(oid)]
-                            valid_rank_flatAR = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_flatAR for z in range(full_vision_rank.shape[0])]]
-                            valid_rank_thinAR = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_thinAR for z in range(full_vision_rank.shape[0])]]
+                            if self.withML:
+                                # Keep only ML predictions which are plausible wrt size
+                                full_vision_rank = self.predictions[self.fnames.index(oid)]
+                                valid_rank_flatAR = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_flatAR for z in range(full_vision_rank.shape[0])]]
+                                valid_rank_thinAR = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_thinAR for z in range(full_vision_rank.shape[0])]]
 
-                            valid_rank = full_vision_rank[[full_vision_rank[z, 0] in candidates_num for z in range(full_vision_rank.shape[0])]]
-                            valid_rank_flat = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_flat for z in range(full_vision_rank.shape[0])]]
-                            valid_rank_thin = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_thin for z in range(full_vision_rank.shape[0])]]
+                                valid_rank = full_vision_rank[[full_vision_rank[z, 0] in candidates_num for z in range(full_vision_rank.shape[0])]]
+                                valid_rank_flat = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_flat for z in range(full_vision_rank.shape[0])]]
+                                valid_rank_thin = full_vision_rank[[full_vision_rank[z, 0] in candidates_num_thin for z in range(full_vision_rank.shape[0])]]
 
-                            # convert rankings to readable labels
-                            read_res = self.makereadable(full_vision_rank, valid_rank, valid_rank_flat, valid_rank_thin,
-                                                         valid_rank_flatAR, valid_rank_thinAR)
-                            read_rank_ML, read_rank_area, read_rank_flat, read_rank_thin, read_rank_flatAR, read_rank_thinAR = read_res
+                                # convert rankings to readable labels
+                                read_res = self.makereadable(full_vision_rank, valid_rank, valid_rank_flat, valid_rank_thin,
+                                                             valid_rank_flatAR, valid_rank_thinAR)
+                                read_rank_ML, read_rank_area, read_rank_flat, read_rank_thin, read_rank_flatAR, read_rank_thinAR = read_res
 
-                            # Verbose result printing for inspection
-                            print("Initial ML rank")
-                            print(read_rank_ML[:5])
-                            print("Knowledge validated ranking (area)")
-                            print(read_rank_area[:5])
-                            #print("Knowledge validated ranking (area + flat)")
-                            #print(read_rank_flat[:5])
-                            #print("Knowledge validated ranking (area + thin)")
-                            #print(read_rank_thin[:5])
-                            if candidates_num_flatAR is not None:
-                                print("Knowledge validated ranking (area + flat + AR)")
-                                print(read_rank_flatAR[:5])
-                            if candidates_num_thinAR is not None:
-                                print("Knowledge validated ranking (area + thin + AR)")
-                                print(read_rank_thinAR[:5])
+                                # Verbose result printing for inspection
+                                print("Initial ML rank")
+                                print(read_rank_ML[:5])
+                                print("Knowledge validated ranking (area)")
+                                print(read_rank_area[:5])
+                                #print("Knowledge validated ranking (area + flat)")
+                                #print(read_rank_flat[:5])
+                                #print("Knowledge validated ranking (area + thin)")
+                                #print(read_rank_thin[:5])
+                                if candidates_num_flatAR is not None:
+                                    print("Knowledge validated ranking (area + flat + AR)")
+                                    print(read_rank_flatAR[:5])
+                                if candidates_num_thinAR is not None:
+                                    print("Knowledge validated ranking (area + thin + AR)")
+                                    print(read_rank_thinAR[:5])
 
-                            ind = self.fnames.index(oid)
-                            if len(valid_rank_thinAR) > 0:
-                                #sizeranks[ind, :] = valid_rank_thinAR[:5, :]
-                                thinAR_copy[ind, :] = valid_rank_thinAR[:5, :]
-                            if len(valid_rank_flatAR) > 0:
-                                flatAR_copy[ind, :] = valid_rank_flatAR[:5, :]
-                            thin_copy[ind, :] = valid_rank_thin[:5, :]
-                            sizequal_copy[ind, :] = valid_rank[:5, :]  # _thin[:5,:]
-                            flat_copy[ind, :] = valid_rank_flat[:5, :]
-                            #changed, keep size and ML predictions separate, unless, size only
-                            # self.predictions[ind, :5] = sizeranks[ind, :] # change ML predictions
-                        if self.reasoner_type=='size':
-                            self.predictions[ind, :5] = valid_rank_thinAR[:5, :] #sizeranks[ind, :]  # change ML predictions
-                            continue #skip spatial reasoning steps
+                                if len(valid_rank_thinAR) > 0:
+                                    #sizeranks[ind, :] = valid_rank_thinAR[:5, :]
+                                    thinAR_copy[ind, :] = valid_rank_thinAR[:5, :]
+                                if len(valid_rank_flatAR) > 0:
+                                    flatAR_copy[ind, :] = valid_rank_flatAR[:5, :]
+                                thin_copy[ind, :] = valid_rank_thin[:5, :]
+                                sizequal_copy[ind, :] = valid_rank[:5, :]  # _thin[:5,:]
+                                flat_copy[ind, :] = valid_rank_flat[:5, :]
+                                #changed, keep size and ML predictions separate, unless, size only
+                                # self.predictions[ind, :5] = sizeranks[ind, :] # change ML predictions
+                                if self.reasoner_type=='size':
+                                    self.predictions[ind, :5] = valid_rank_thinAR[:5, :] #sizeranks[ind, :]  # change ML predictions and skip spatial reasoning
+                            else: # size ranking alone is used
+                                #if enough in area + thickness + AR use that
+                                if len(candidates_num_thinAR)>=5:
+                                    self.predictions[ind,:5] = np.array([(candidates_num_thinAR[x], 0.0) for x in range(5)],dtype='object')
+                                #otherwise use area + thickness (in hybrid pipeline it would be fallback to ML but not available here)
+                                else:
+                                    self.predictions[ind, :5] = np.array([(candidates_num_thin[x], 0.0) for x in range(5)], dtype='object')
 
                     """Qualitative Spatial Reasoning"""
                     if 'spatial' in self.reasoner_type:
@@ -244,7 +253,7 @@ class ObjectReasoner():
         print("Hybrid results (%s)" % self.reasoner_type)
         eval_dictionary = eval_singlemodel(self, eval_dictionary, self.reasoner_type)
         eval_dictionary = eval_singlemodel(self, eval_dictionary, self.reasoner_type, K=5)
-        if 'size' in self.reasoner_type:
+        if 'size' in self.reasoner_type and self.withML:
             #also print results of other combinations of size features
             for abl, preds in list(zip(['size qual', 'size qual+flat', 'size qual+thin', 'size qual+flat+AR', 'size qual+thin+AR']\
                     ,[sizequal_copy, flat_copy, thin_copy, flatAR_copy, thinAR_copy])):
