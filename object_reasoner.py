@@ -236,14 +236,16 @@ class ObjectReasoner():
                         QSRs = infer_special_ON(QSRs)
                         #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
                         #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
-                        if self.reasoner_type=='size_spatial':
+                        if self.reasoner_type=='size_spatial' and self.withML:
                             self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates, sizerank=thinAR_copy) #pass prior size ranking too
-                        else:
+                        elif self.reasoner_type!='size_spatial' and self.withML:
                             self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates) # proceed with validation/correction based on spatial knowledge
-
+                        elif self.reasoner_type == 'size_spatial' and not self.withML: #size and space alone without ML as base
+                            self.space_validate_standalone(tbcorr, QSRs, spatialDB, sizerank=self.predictions)
+                        else: #spatial alone without ML ranking as base on correction
+                            self.space_validate_standalone(tbcorr, QSRs, spatialDB)
                 # else: print("All objects valid wrt size.. skipping correction")
                 disconnect_DB(tmp_conn, tmp_cur)
-
 
         procTime = float(time.time() - start)  # global proc time
         print("Took % fseconds." % procTime)
@@ -552,6 +554,197 @@ class ObjectReasoner():
             read_final_rank = [self.remapper[final_rank[z, 0]] for z in range(final_rank.shape[0])]
             print(read_final_rank)
 
+    def space_validate_standalone(self,obj_list,qsr_graph,spatialDB, K=5, sizerank=None):
+
+        all_classes = list(self.mapper.keys())
+
+        for oid in obj_list: #for each object to correct/validate
+            i = self.fnames.index(oid)
+            ML_rank = self.predictions[i, :K]
+            spatialonly = np.empty((len(all_classes), 2), dtype='object')
+            spatialonly[:, 0] = np.array(list(self.mapper.values()))
+            spatialonly[:, 1] = np.ones((len(all_classes),))
+
+            if sizerank is not None:  #both size and ML are leveraged, spatial acts as 3rd judgement
+                size_rank = sizerank[i,:K]
+                spatialforsize = np.copy(size_rank)
+                if self.remapper[size_rank[0][0]] =='person': #skip space validation whenever top ML prediction is person
+                #people cannot be discriminated based on where they lie
+                    self.predictions[i, :K] = size_rank
+                    print("top size prediction is person, skipping spatial validation")
+                    continue
+
+                print("%s predicted as %s" % (self.remapper[self.labels[i]],self.remapper[size_rank[0][0]]))
+
+                print("Top-5 before spatial validation: ")
+                read_current_rank = [(self.remapper[size_rank[z, 0]], size_rank[z, 1]) for z in
+                                     range(size_rank.shape[0])]
+                print(read_current_rank) #ML rank in human readable form
+
+                for n, (cnum, _) in enumerate(size_rank): #for each class in the ML rank
+
+                    size_label = self.remapper[cnum]
+                    wn_syn_size = self.taxonomy[size_label]
+
+                    # use ground truth for nearby object (except the one being predicted)
+                    fig_qsrs = [(size_label, self.remapper[self.labels_full[self.fnames_full.index(ref)]], r['QSR'])
+                                for f, ref, r in qsr_graph.out_edges(oid, data=True) if
+                                ref not in ['wall', 'floor']]  # rels where obj is figure
+                    ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]], size_label, r['QSR'])
+                                for f, ref, r in qsr_graph.in_edges(oid, data=True) if
+                                f not in ['wall', 'floor']]  # rels where obj is reference
+
+                    #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf
+                    surface_qsrs = [(size_label,ref,r['QSR']) for f,ref,r \
+                                    in qsr_graph.out_edges(oid, data=True) if ref in ['wall','floor']] #only those in fig/ref form
+                    fig_qsrs.extend(surface_qsrs) # merge into list of fig/ref relations
+
+                    if not wn_syn_size or size_label=='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0):
+                        spatialforsize[n][1] = 1.
+                        continue
+
+                    sub_syn_size = wn_syn_size
+                    all_spatial_scores_size = []
+                    fig_rs = list(set([r for _,_,r in fig_qsrs])) #distinct figure relations present
+                    for _,ref,r in fig_qsrs: #for each QSR where obj is figure, i.e., subject
+                        if ref=='wall': obj_syn = ['wall.n.01'] #cases where reference is wall or floor
+                        elif ref=='floor': obj_syn = ['floor.n.01']
+                        else: obj_syn = self.taxonomy[ref]
+                        if obj_syn =='': #reference obj is e.g., foosball table or pigeon holes (absent from background KB)
+                            all_spatial_scores_size.append(1.)
+                            continue
+                        if r == 'touches':
+                            if len(fig_rs) ==1: # touches is the only rel
+                                all_spatial_scores_size.append(1.)
+                                continue
+                            else: continue #there are other types, just skip this one as not relevant for VG
+                        elif r=='beside':
+                            continue #beside already checked through L/R rel
+                        elif r == 'leansOn' or r == 'affixedOn': r = 'against'  # mapping on VG predicate
+                        all_spatial_scores_size = self.compute_all_scores(spatialDB, all_spatial_scores_size,sub_syn_size, obj_syn,r)
+
+                    # Similarly, for QSRs where predicted obj is reference, i.e., object
+                    obj_syn_size = wn_syn_size#self.taxonomy[size_label]
+                    ref_rs = list(set([r for _, _, r in ref_qsrs]))  # distinct figure relations present
+                    for fig,_,r in ref_qsrs:
+                        if fig=='wall': sub_syn = ['wall.n.01'] #cases where reference is wall or floor
+                        elif fig=='floor': sub_syn = ['floor.n.01']
+                        else: sub_syn = self.taxonomy[fig]
+                        if sub_syn =='': #figure obj is e.g., foosball table or pigeon holes (absent from background KB)
+                            all_spatial_scores_size.append(1.)
+                            continue
+                        if r == 'touches':
+                            if len(ref_rs) ==1: # touches is the only rel
+                                all_spatial_scores_size.append(1.)
+                                continue
+                            else: continue #there are other types, just skip this one as not relevant for VG
+                        elif r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
+                        elif r =='leansOn' or r=='affixedOn': r = 'against' #mapping on VG predicate
+                        all_spatial_scores_size = self.compute_all_scores(spatialDB, all_spatial_scores_size, sub_syn, obj_syn_size, r)
+
+                    # Average across all QSRs
+                    # changed: rewrite original score instead of adding up
+                    avg_spatial_score_size = statistics.mean(all_spatial_scores_size)
+                    spatialforsize[n][1] = avg_spatial_score_size
+
+                # Normalise scores across classes, so it is between 0 and 1
+                # minmax norm
+                scores = spatialforsize[:,1]
+                min_, max_ = np.min(scores), np.max(scores)
+                if max_ - min_ !=0: #avoid division by zero
+                    spatialforsize[:, 1] = np.array([(x-min_)/(max_ - min_) for x in scores])
+                posthoc_rank = spatialforsize[np.argsort(spatialforsize[:, 1])] # order by score ascending
+
+            else:
+                print("%s predicted as %s" % (self.remapper[self.labels[i]], self.remapper[ML_rank[0][0]]))
+                for y, c in enumerate(all_classes): #no background ranking, run for all taxonomy classes and maximise scores at the end
+                    wn_syn = self.taxonomy[c]
+                    # changed, if only spatial no option but to use gold labels
+                    # use ground truth for nearby object (except the one being predicted)
+                    fig_qsrs = [(c, self.remapper[self.labels_full[self.fnames_full.index(ref)]], r['QSR'])
+                                for f, ref, r in qsr_graph.out_edges(oid, data=True) if
+                                ref not in ['wall', 'floor']]  # rels where obj is figure
+                    ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]], c, r['QSR'])
+                                for f, ref, r in qsr_graph.in_edges(oid, data=True) if
+                                f not in ['wall', 'floor']]  # rels where obj is reference
+
+                    surface_qsrs = [(c, ref, r['QSR']) for f, ref, r \
+                                    in qsr_graph.out_edges(oid, data=True) if
+                                    ref in ['wall', 'floor']]  # only those in fig/ref form
+                    fig_qsrs.extend(surface_qsrs)  # merge into list of fig/ref relations
+
+                    if not wn_syn or (len(ref_qsrs) == 0 and len(fig_qsrs) == 0):
+                        continue
+                    sub_syn = wn_syn
+                    all_spatial_scores = []
+                    fig_rs = list(set([r for _, _, r in fig_qsrs]))  # distinct figure relations present
+                    for _, ref, r in fig_qsrs:  # for each QSR where obj is figure, i.e., subject
+                        if ref == 'wall':
+                            obj_syn = ['wall.n.01']  # cases where reference is wall or floor
+                        elif ref == 'floor':
+                            obj_syn = ['floor.n.01']
+                        else:
+                            obj_syn = self.taxonomy[ref]
+                        if obj_syn == '':  # reference obj is e.g., foosball table or pigeon holes (absent from background KB)
+                            all_spatial_scores.append(1.)
+                            continue
+                        if r == 'touches':
+                            if len(fig_rs) == 1:  # touches is the only rel
+                                all_spatial_scores.append(1.)
+                                continue
+                            else:
+                                continue  # there are other types, just skip this one as not relevant for VG
+                        elif r == 'beside':
+                            continue  # beside already checked through L/R rel
+                        elif r == 'leansOn' or r == 'affixedOn':
+                            r = 'against'  # mapping on VG predicate
+                        all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores,sub_syn, obj_syn, r)
+
+                    # Similarly, for QSRs where predicted obj is reference, i.e., object
+                    obj_syn = wn_syn  # self.taxonomy[size_label]
+                    ref_rs = list(set([r for _, _, r in ref_qsrs]))  # distinct figure relations present
+                    for fig, _, r in ref_qsrs:
+                        if fig == 'wall':
+                            sub_syn = ['wall.n.01']  # cases where reference is wall or floor
+                        elif fig == 'floor':
+                            sub_syn = ['floor.n.01']
+                        else:
+                            sub_syn = self.taxonomy[fig]
+                        if sub_syn == '':  # figure obj is e.g., foosball table or pigeon holes (absent from background KB)
+                            all_spatial_scores.append(1.)
+                            continue
+                        if r == 'touches':
+                            if len(ref_rs) == 1:  # touches is the only rel
+                                all_spatial_scores.append(1.)
+                                continue
+                            else:
+                                continue  # there are other types, just skip this one as not relevant for VG
+                        elif r == 'beside':
+                            continue  # touches not useful for VG predicates, beside already checked through L/R rel
+                        elif r == 'leansOn' or r == 'affixedOn':
+                            r = 'against'  # mapping on VG predicate
+                        all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores, sub_syn,
+                                                                          obj_syn, r)
+                    # Average across all QSRs
+                    # changed: rewrite original score instead of adding up
+                    avg_spatial_score = statistics.mean(all_spatial_scores)
+                    spatialonly[y][1] = avg_spatial_score
+
+                    # Normalise scores across classes, so it is between 0 and 1
+                    # minmax norm
+                scores = spatialonly[:, 1]
+                min_, max_ = np.min(scores), np.max(scores)
+                if max_ - min_ != 0:  # avoid division by zero
+                    spatialonly[:, 1] = np.array([(x - min_) / (max_ - min_) for x in scores])
+                posthoc_rank = spatialonly[np.argsort(spatialonly[:, 1])][:K,:] # order by score ascending
+
+            # ranking after correction is ..
+            print("Top-5 after spatial validation on ML rank: ")
+            read_phoc_rank = [(self.remapper[posthoc_rank[z, 0]], posthoc_rank[z, 1]) for z in
+                              range(posthoc_rank.shape[0])]
+            print(read_phoc_rank)  # posthoc rank in human readable form
+            final_rank = posthoc_rank
+            self.predictions[i, :K] = final_rank
 
     def compute_all_scores(self, spatialDB, all_scores, sub_syn, obj_syn, r):
 
