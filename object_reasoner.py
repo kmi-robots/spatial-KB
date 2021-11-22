@@ -553,6 +553,7 @@ class ObjectReasoner():
             print("Final top-5: ")
             read_final_rank = [self.remapper[final_rank[z, 0]] for z in range(final_rank.shape[0])]
             print(read_final_rank)
+            continue
 
     def space_validate_standalone(self,obj_list,qsr_graph,spatialDB, K=5, sizerank=None):
 

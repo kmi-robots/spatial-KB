@@ -36,8 +36,8 @@ def main(baseline='k-net', fname='snapshot-test-results.h5', basepath ='./object
     df['tsne-2d-two'] = tsne_results[:, 1]
 
     # filter only classes from A to B for visualization
-    A = 41
-    B = 60
+    A = 1
+    B = 10
     dfsub = df.loc[(df['num_labels'] >= A) & (df['num_labels'] <= B)]
 
     plt.figure(figsize=(16, 10))
