@@ -20,26 +20,63 @@ pip install -r requirements.txt
 
 ## Data preparation        
 
-You can download the data needed for reproducing our experiments through [this link]().
+You can download the data needed for reproducing our experiments through [this link](https://mega.nz/file/8sMUGJqL#d8FpmTHlQAfEOBoEOhlxrhEkSPUIbDJ7o1fOrUCGs1Q).
 All data are in a .zip folder and will need to be extracted and prepared as follows:
 
 ```
+mv your-path-to/labdata_AAAIMAKE22.zip your-path-to/spatial-KB/data
+unzip labdata_AAAIMAKE22.zip
+rm labdata_AAAIMAKE22.zip
+cd your-path-to/spatial-KB/data && mkdir Labdata 
+mv test-imgs/ Labdata/
+```
+
+For the raw object-object relationships in Visual Genome (ver 1.4) you will need:
+```
+cd spatial-KB/data
+
+wget https://visualgenome.org/static/data/dataset/relationships.json.zip
+unzip relationships.json.zip
+rm relationships.json.zip
 
 ```
 
 ## Sample commands
 
 We provide a command line interface that can be run from terminal.
+
+**Please note that the first run takes much longer because the raw VG data are processed for the first time.** 
+Subsequent runs, instead, rely on the pre-processed VG data stored locally.
+
+ML and Size-only ablation:
+```
+cd your-path-to/spatial-KB
+python3 cli.py --rm size
+```
+
 To run experiment A:
 
 ```
+#spatial only ablation
+python3 cli.py
+
+#size+spatial waterfall 
+
+#size+spatial 3 judges
+python3 cli.py --rm size_spatial 
 
 ```
 
 To run experiment B:
 
 ```
+#spatial only ablation
+python3 cli.py --ql ML
+
+#size+spatial waterfall 
+
+#size+spatial 3 judges
+python3 cli.py --rm size_spatial --ql ML
 
 ```
-
   
