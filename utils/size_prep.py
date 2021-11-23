@@ -96,14 +96,14 @@ def update_db(connection, cursor, filename, obj_dims):
 
 def main():
     scale = 1000.
-    camintr = load_camera_intrinsics_txt('./data/KMi-set-2020-test2/'
+    camintr = load_camera_intrinsics_txt('./data/Labdata/'
                                          'camera-intrinsics.txt')
     camera = o3d.camera.PinholeCameraIntrinsic()
     camera.set_intrinsics(640, 480, camintr[0], camintr[4], camintr[2], camintr[5])
 
     depthps = []
     processingts = []
-    for dirp, _, filen in os.walk('./data/KMi-set-2020-test2/test-imgs/'):
+    for dirp, _, filen in os.walk('./data/Labdata/test-imgs/'):
         if len(filen) > 0:  # skip folder level
             for fn in filen:
                 if 'depth' in fn:

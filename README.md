@@ -18,6 +18,10 @@ Installing Python3 dependencies (tested on Ubuntu 20.04):
 pip install -r requirements.txt
 ``` 
 
+You will need PostgreSQL installed, and the PostGIS and SFCGAL extensions enabled.
+Useful installation links:
+
+
 ## Data preparation        
 
 You can download the data needed for reproducing our experiments through [this link](https://mega.nz/file/8sMUGJqL#d8FpmTHlQAfEOBoEOhlxrhEkSPUIbDJ7o1fOrUCGs1Q).
@@ -40,6 +44,16 @@ unzip relationships.json.zip
 rm relationships.json.zip
 
 ```
+
+Prepare size and spatial properties on your local DB:
+
+```
+cd your-path-to/spatial-KB/utils
+python3 size_prep.py
+python3 spatial_prep.py
+
+```
+
 
 ## Sample commands
 
