@@ -7,7 +7,7 @@ import psycopg2
 from psycopg2 import Error
 import keyring # used for more secure pw storage
 from collections import OrderedDict
-from utils.x3domviz import generate_html_viz
+# from utils.x3domviz import generate_html_viz
 
 def connect_DB(user,dbname):
     try:

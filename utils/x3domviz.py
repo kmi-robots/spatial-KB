@@ -143,7 +143,7 @@ def generate_sql_from_viz(cursor, connection,filepath, wheight=4):
 
 def main():
     conn, cur = connect_DB(os.environ['USER'], 'gis_database')
-    output_p = os.path.join(os.environ['HOME'], 'hsdump_filtered.html')
+    output_p = os.path.join('./data/hsdump_filtered.html')
     #generate_html_viz(cur,output_p)
     generate_sql_from_viz(cur,conn, output_p)
     disconnect_DB(conn, cur)
