@@ -27,7 +27,7 @@ Useful links (tested on Ubuntu 20.04):
 
 Before moving to the next step, create a DB named "gis_database" that you have admin privileges on.
 The annotated wall data can be added to the semantic map through the SQL script
-available under ```./data/walls.sql```. Be sure to edit the walls.sql file with your SQL username in place of the "your_user" string. 
+available under ```./data/walls.sql```. Be sure to edit the walls.sql file with your SQL username in place of the "postgres" string. 
 Then, from terminal, run:
 ```
 psql your_user -d gis_database -f ./data/walls.sql
