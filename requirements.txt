@@ -5,3 +5,4 @@ networkx
 keyring
 scikit-learn
 open3d==0.12.0
+beautifulsoup4
