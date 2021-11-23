@@ -19,8 +19,13 @@ pip install -r requirements.txt
 ``` 
 
 You will need PostgreSQL installed, and the PostGIS and SFCGAL extensions enabled.
-Useful installation links:
+Useful links (tested on Ubuntu 20.04):
+- Install [PostgreSQL 12](https://www.postgresql.org/download/linux/ubuntu/)
+- Build [SFCGAL](https://gitlab.com/Oslandia/SFCGAL) from source
+- Build [PostGIS](https://postgis.net/install/) from source (with the *--with-sfcgal* flag)
+- [PgAdmin 4](https://www.pgadmin.org/download/pgadmin-4-apt/) provides a helpful interface to visualize and query your DB.
 
+Before moving to the next step, create a DB named "gis_database" that you have admin privileges on.
 
 ## Data preparation        
 
@@ -31,7 +36,7 @@ All data are in a .zip folder and will need to be extracted and prepared as foll
 mv your-path-to/labdata_AAAIMAKE22.zip your-path-to/spatial-KB/data
 unzip labdata_AAAIMAKE22.zip
 rm labdata_AAAIMAKE22.zip
-cd your-path-to/spatial-KB/data && mkdir Labdata 
+cd your-path-to/spatial-KB/data 
 mv test-imgs/ Labdata/
 ```
 
@@ -45,13 +50,12 @@ rm relationships.json.zip
 
 ```
 
-Prepare size and spatial properties on your local DB:
+Prepare size and spatial properties on your local DB for faster inference:
 
 ```
-cd your-path-to/spatial-KB/utils
-python3 size_prep.py
-python3 spatial_prep.py
-
+cd your-path-to/spatial-KB
+python3 ./utils/size_prep.py
+python3 ./utils/spatial_prep.py
 ```
 
 
