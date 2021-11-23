@@ -26,6 +26,13 @@ Useful links (tested on Ubuntu 20.04):
 - [PgAdmin 4](https://www.pgadmin.org/download/pgadmin-4-apt/) provides a helpful interface to visualize and query your DB.
 
 Before moving to the next step, create a DB named "gis_database" that you have admin privileges on.
+The annotated wall data can be added to the semantic map through the SQL script
+available under ```./data/walls.sql```. Be sure to edit the walls.sql file with your SQL username in place of the "your_user" string. 
+Then, from terminal, run:
+```
+psql your_user -d gis_database -f ./data/walls.sql
+```
+
 
 ## Data preparation        
 
@@ -79,6 +86,7 @@ To run experiment A:
 python3 cli.py
 
 #size+spatial waterfall 
+python3 cli.py --rm size_spatial --waterfall true
 
 #size+spatial 3 judges
 python3 cli.py --rm size_spatial 
@@ -92,9 +100,8 @@ To run experiment B:
 python3 cli.py --ql ML
 
 #size+spatial waterfall 
+python3 cli.py --rm size_spatial --ql ML --waterfall true
 
 #size+spatial 3 judges
 python3 cli.py --rm size_spatial --ql ML
-
 ```
-  

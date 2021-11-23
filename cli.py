@@ -42,6 +42,8 @@ def main():
                              "gold: ground truth labels for all objects but the one to predict"
                              "ML: ML predicted labels"
                             "hybrid: ML predicted if above confidence threshold, size-validated otherwise")
+    parser.add_argument('--waterfall', type=str2bool, nargs='?', const=False, default=False,
+                        help='if true, applies size and spatial reasoning in sequence')
     parser.add_argument('--withML', type=str2bool, nargs='?', const=True, default=True,
                         help='applies reasoning on ML ranking of predictions, if True'
                         'otherwise tries to guess objects purely through knowledge-based reasoning')

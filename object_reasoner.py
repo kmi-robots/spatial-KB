@@ -42,6 +42,7 @@ class ObjectReasoner():
         self.reasoner_type = args.rm
         self.spatial_label_type = args.ql
         self.withML = args.withML
+        self.waterfall = args.waterfall
         #filter out objects with no depth data associated in the spatial DB
         self.filter_nulls(idlist)
 
@@ -192,7 +193,8 @@ class ObjectReasoner():
                                 flat_copy[ind, :] = valid_rank_flat[:5, :]
                                 #changed, keep size and ML predictions separate, unless, size only
                                 # self.predictions[ind, :5] = sizeranks[ind, :] # change ML predictions
-                                if self.reasoner_type=='size':
+                                if self.reasoner_type=='size' or self.waterfall:
+                                    # if size_only or size and spatial applied in sequence, change ML ranking
                                     self.predictions[ind, :5] = valid_rank_thinAR[:5, :] #sizeranks[ind, :]  # change ML predictions and skip spatial reasoning
                             else: # size ranking alone is used
                                 #if enough in area + thickness + AR use that
@@ -236,11 +238,12 @@ class ObjectReasoner():
                         QSRs = infer_special_ON(QSRs)
                         #QSRs_H = nx.relabel_nodes(QSRs,lmapping) #human-readable ver
                         #ugr.plot_graph(QSRs_H) #visualize QSR graph for debugging
-                        if self.reasoner_type=='size_spatial' and self.withML:
+                        if self.reasoner_type=='size_spatial' and self.withML and not self.waterfall:
+                            # 3 judges scenario
                             self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates, sizerank=thinAR_copy) #pass prior size ranking too
                         elif self.reasoner_type!='size_spatial' and self.withML:
                             self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates) # proceed with validation/correction based on spatial knowledge
-                        elif self.reasoner_type == 'size_spatial' and not self.withML: #size and space alone without ML as base
+                        elif self.reasoner_type == 'size_spatial' and (not self.withML or self.waterfall): #size and space alone without ML as base
                             self.space_validate_standalone(tbcorr, QSRs, spatialDB, sizerank=self.predictions)
                         else: #spatial alone without ML ranking as base on correction
                             self.space_validate_standalone(tbcorr, QSRs, spatialDB)
@@ -566,8 +569,8 @@ class ObjectReasoner():
             spatialonly[:, 0] = np.array(list(self.mapper.values()))
             spatialonly[:, 1] = np.ones((len(all_classes),))
 
-            if sizerank is not None:  #both size and ML are leveraged, spatial acts as 3rd judgement
-                size_rank = sizerank[i,:K]
+            if sizerank is not None:
+                size_rank = sizerank[i,:K] # either ML rank or size-validate ML rank (if waterfall option selected)
                 spatialforsize = np.copy(size_rank)
                 if self.remapper[size_rank[0][0]] =='person': #skip space validation whenever top ML prediction is person
                 #people cannot be discriminated based on where they lie
@@ -582,18 +585,35 @@ class ObjectReasoner():
                                      range(size_rank.shape[0])]
                 print(read_current_rank) #ML rank in human readable form
 
-                for n, (cnum, _) in enumerate(size_rank): #for each class in the ML rank
+                for n, (cnum, _) in enumerate(size_rank): #for each class in the prior rank
 
                     size_label = self.remapper[cnum]
                     wn_syn_size = self.taxonomy[size_label]
 
-                    # use ground truth for nearby object (except the one being predicted)
-                    fig_qsrs = [(size_label, self.remapper[self.labels_full[self.fnames_full.index(ref)]], r['QSR'])
-                                for f, ref, r in qsr_graph.out_edges(oid, data=True) if
-                                ref not in ['wall', 'floor']]  # rels where obj is figure
-                    ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]], size_label, r['QSR'])
-                                for f, ref, r in qsr_graph.in_edges(oid, data=True) if
-                                f not in ['wall', 'floor']]  # rels where obj is reference
+                    if self.spatial_label_type == 'gold':
+                        # use ground truth for nearby object (except the one being predicted)
+                        fig_qsrs = [(size_label, self.remapper[self.labels_full[self.fnames_full.index(ref)]], r['QSR'])
+                                    for f, ref, r in qsr_graph.out_edges(oid, data=True) if
+                                    ref not in ['wall', 'floor']]  # rels where obj is figure
+                        ref_qsrs = [(self.remapper[self.labels_full[self.fnames_full.index(f)]], size_label, r['QSR'])
+                                    for f, ref, r in qsr_graph.in_edges(oid, data=True) if
+                                    f not in ['wall', 'floor']]  # rels where obj is reference
+
+                    elif self.spatial_label_type == 'ML':
+                        # independent from order because we collect it from the separate list self.pred_full and only modify self.predictions
+                        # at the end of validation
+                        # use ML predictions that are above conf threshold
+                        fig_qsrs = [(size_label, self.remapper[self.pred_full[self.fnames_full.index(ref), 0, 0]], r['QSR'])
+                            for f, ref, r in qsr_graph.out_edges(oid, data=True) if
+                            ref not in ['wall', 'floor']
+                            and self.pred_full[self.fnames_full.index(ref), 0, 1] < self.epsilon_set[
+                                0]]  # rels where obj is figure
+                        ref_qsrs = [
+                            (self.remapper[self.pred_full[self.fnames_full.index(f), 0, 0]], size_label, r['QSR'])
+                            for f, ref, r in qsr_graph.in_edges(oid, data=True) if
+                            f not in ['wall', 'floor']
+                            and self.pred_full[self.fnames_full.index(f), 0, 1] < self.epsilon_set[
+                                0]]  # rels where obj is reference
 
                     #Retrieve wall and floor QSRs, only in figure/reference form - e.g., 'object onTopOf
                     surface_qsrs = [(size_label,ref,r['QSR']) for f,ref,r \

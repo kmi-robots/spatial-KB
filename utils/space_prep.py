@@ -31,7 +31,7 @@ def main():
     conn, cur = connect_DB(os.environ['USER'],'gis_database')
     # create index on semantic map ids first for faster access later
     cur.execute("""
-            CREATE INDEX objid_index
+            CREATE INDEX IF NOT EXISTS objid_index
             on semantic_map 
             USING hash (object_id)
             """)
@@ -65,7 +65,7 @@ def main():
     conn, cur = connect_DB(os.environ['USER'], 'gis_database')
     #add index on both object_id and wall_id
     cur.execute("""
-    CREATE INDEX obj_id_index
+    CREATE INDEX IF NOT EXISTS obj_id_index
     on objects_precalc 
     USING hash
     (object_id)
@@ -75,7 +75,7 @@ def main():
 
     conn, cur = connect_DB(os.environ['USER'], 'gis_database')
     cur.execute("""
-        CREATE INDEX wall_id_index
+        CREATE INDEX IF NOT EXISTS wall_id_index
         on objects_precalc 
         USING hash
         (wall_id)
