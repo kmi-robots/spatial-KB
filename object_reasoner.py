@@ -125,9 +125,9 @@ class ObjectReasoner():
                     neg_tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
                               < self.epsilon_set[0]]
                     QSRcandidates = img_ids
-                    """if self.reasoner_type =='size_spatial':
+                    if self.reasoner_type =='size_spatial':
                         tbcorr, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), neg_tbcorr, sizeKB, (tmp_conn,tmp_cur)) # check which ones have a top-1 prediction which is valid wrt size
-                    else: QSRcandidates = img_ids"""
+                    else: QSRcandidates = img_ids
                 else:
                     tbcorr = img_ids  # validate all
                     QSRcandidates = img_ids
@@ -244,7 +244,7 @@ class ObjectReasoner():
                             self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates, sizerank=thinAR_copy) #pass prior size ranking too
                         elif self.reasoner_type!='size_spatial' and self.withML:
                             self.space_validate(tbcorr, QSRs, spatialDB, QSRcandidates) # proceed with validation/correction based on spatial knowledge
-                        elif self.reasoner_type == 'size_spatial' and (not self.withML or self.waterfall): #size and space alone without ML as base
+                        elif self.reasoner_type == 'size_spatial' and self.withML and self.waterfall: #size and space alone without ML as base
                             self.space_validate_standalone(tbcorr, QSRs, spatialDB, sizerank=self.predictions)
                         else: #spatial alone without ML ranking as base on correction
                             self.space_validate_standalone(tbcorr, QSRs, spatialDB)
@@ -622,7 +622,7 @@ class ObjectReasoner():
                     fig_qsrs.extend(surface_qsrs) # merge into list of fig/ref relations
 
                     if not wn_syn_size or size_label=='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0):
-                        spatialforsize[n][1] = 1.
+                        spatialforsize[n][1] += 1. #added up to original ML score
                         continue
 
                     sub_syn_size = wn_syn_size
@@ -665,9 +665,9 @@ class ObjectReasoner():
                         all_spatial_scores_size = self.compute_all_scores(spatialDB, all_spatial_scores_size, sub_syn, obj_syn_size, r)
 
                     # Average across all QSRs
-                    # changed: rewrite original score instead of adding up
+                    # added up to original ML score
                     avg_spatial_score_size = statistics.mean(all_spatial_scores_size)
-                    spatialforsize[n][1] = avg_spatial_score_size
+                    spatialforsize[n][1] += avg_spatial_score_size
 
                 # Normalise scores across classes, so it is between 0 and 1
                 # minmax norm
