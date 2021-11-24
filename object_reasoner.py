@@ -552,29 +552,31 @@ class ObjectReasoner():
                 else:
                     # Fill up list with duplicates in order from most common to least common
                     # so that final ranking is still K positions long
-                    to_fill = K - len(c_)
-                    topl, tops = c_[0], s_[0]
+                    finrank_list = [(l, num) for l, num in votes.items()]
+                    if len(c_)< K:
+                        to_fill = K - len(c_)
+                        topl, tops = c_[0], s_[0]
 
-                    # fill remaining positions with top scores
-                    finrank_list = [(l,num) for l, num in votes.items()]
-                    for num in range(to_fill):
-                        finrank_list.append((topl,tops))
-                    #reorder list in the end
-                    finrank_list.sort(key=lambda x: x[1], reverse=True)
-                    """for k, (l, num) in enumerate(votes.keys()): #enumerate(votes.most_common(K)):
-                        
-                        remaining_spots = K - len(finrank_list)
-                        if num<= remaining_spots: cap = num
-                        else: cap = remaining_spots
-                        for r in range(cap): finrank_list.append((l,0.))
-                        remaining_spots = K - len(finrank_list)
-                        if remaining_spots==0: #reached end of topK
-                            break #stop at topK"""
+                        for num in range(to_fill): # fill remaining positions with top scores
+                            finrank_list.append((topl,tops))
+                        finrank_list.sort(key=lambda x: x[1], reverse=True) #reorder list in the end, scores descending
+                        """for k, (l, num) in enumerate(votes.keys()): #enumerate(votes.most_common(K)):
+                            
+                            remaining_spots = K - len(finrank_list)
+                            if num<= remaining_spots: cap = num
+                            else: cap = remaining_spots
+                            for r in range(cap): finrank_list.append((l,0.))
+                            remaining_spots = K - len(finrank_list)
+                            if remaining_spots==0: #reached end of topK
+                                break #stop at topK"""
+                    else:
+                        finrank_list = finrank_list[:K] #only keep top-5
                     final_rank = np.array(finrank_list,dtype='object') #order by number of votes
 
             else:
                 # use spatial ranking combined with Ml score directly
                 final_rank = posthoc_rank
+
             self.predictions[i, :K] = final_rank
             print("Final top-5: ")
             read_final_rank = [self.remapper[final_rank[z, 0]] for z in range(final_rank.shape[0])]
