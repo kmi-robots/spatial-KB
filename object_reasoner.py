@@ -529,46 +529,48 @@ class ObjectReasoner():
                     print("Keep size ranking")
                     continue
 
-                votes = {cl: [] for cl in spatial_classes} #votes = {cl: 0. for cl in spatial_classes}
+                votes = {cl: 0. for cl in spatial_classes} #votes = {cl: 0. for cl in spatial_classes}
                 # votes = Counter(spatial_classes)
+                # Borda count positional voting system
+                # the higher the position in the ranking the higher the points assigned
+
                 # spatialML_ord = [(cnum, K-(m+1)) for m,(cnum,jdis) in enumerate(posthoc_rank) if jdis < 1.]
                 for m,(cnum,jdis) in enumerate(posthoc_rank):
                     if jdis < 1.:
-                        votes[cnum].append(jdis*(m+1))  #+= K-(m+1) # Borda count positional voting system
-                # the higher the position in the ranking the higher the points assigned
+                        votes[cnum] += K-(m+1)  #.append(jdis*(m+1))
+
                 # spatialsize_ord = [(cnum, K-(m+1)) for m,(cnum,jdis) in enumerate(posthoc_rank_size) if jdis < 1.]
 
                 for m, (cnum, jdis) in enumerate(posthoc_rank_size):
                     if jdis < 1.:
-                        votes[cnum].append(jdis*(m+1)) #+= K - (m + 1)
+                        votes[cnum]+= K - (m + 1) #.append(jdis*(m+1)) #+= K - (m + 1)
 
                 # average class-wise
-                finrank_list = [(l, statistics.mean(val)) for l,val in votes.items()]
-                finrank_list.sort(key=lambda x: x[1])
-                # sort by score desc
+                # finrank_list = [(l, statistics.mean(val)) for l,val in votes.items()]
+                # finrank_list.sort(key=lambda x: x[1]) # sort by score desc
                 #if there are ties
-                if finrank_list[0][1] == finrank_list[1][1]:
+                # if finrank_list[0][1] == finrank_list[1][1]:
+                #     self.predictions[i, :K] = size_rank
+                #     print("Keep size validated ranking")
+                #     continue
+                s_ = list(votes.values())
+                # c_ = list(votes.keys())
+                if s_[0] == s_[1]:
                     self.predictions[i, :K] = size_rank
                     print("Keep size validated ranking")
                     continue
-                    """s_ = list(votes.values())
-                    c_ = list(votes.keys())
-                    if s_[0] == s_[1]:
-                        self.predictions[i, :K] = size_rank
-                        print("Keep size validated ranking")
-                        continue
-                    """
+
                 else:
                     # Fill up list with duplicates in order from most common to least common
                     # so that final ranking is still K positions long
-                    # finrank_list = [(l, num) for l, num in votes.items()]
+                    finrank_list = [(l, num) for l, num in votes.items()]
                     if len(finrank_list)< K:
                         to_fill = K - len(finrank_list)
                         topl, tops = finrank_list[0][0], finrank_list[0][1]
 
                         for num in range(to_fill): # fill remaining positions with top scores
                             finrank_list.append((topl,tops))
-                        finrank_list.sort(key=lambda x: x[1])#, reverse=True) #reorder list in the end, scores descending
+                        finrank_list.sort(key=lambda x: x[1], reverse=True) #reorder list in the end, scores descending
                         """for k, (l, num) in enumerate(votes.keys()): #enumerate(votes.most_common(K)):
                             
                             remaining_spots = K - len(finrank_list)
