@@ -124,7 +124,7 @@ class ObjectReasoner():
                               >= self.epsilon_set[0]] # # select for correction, based on confidence, i.e., L2 distance greater than threshold
                     neg_tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
                               < self.epsilon_set[0]]
-                    QSRcandidates = img_ids
+                    # QSRcandidates = img_ids
                     if self.reasoner_type =='size_spatial':
                         tbcorr, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), neg_tbcorr, sizeKB, (tmp_conn,tmp_cur)) # check which ones have a top-1 prediction which is valid wrt size
                     else: QSRcandidates = img_ids
@@ -834,7 +834,7 @@ class ObjectReasoner():
             else: denom2 = float(spatialDB.KB.VG_stats['objects'][obj_syn][rel])
         except KeyError: #if any hit is found
             return 0.
-        return nom / (denom1+denom2)
+        return nom / (denom1+denom2-nom)
 
     def makereadable(self,ML_rank, valid_rank, valid_rank_flat, valid_rank_thin, valid_rank_flatAR, valid_rank_thinAR):
 
