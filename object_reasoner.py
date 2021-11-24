@@ -10,7 +10,7 @@ import time
 import statistics
 import networkx as nx
 import cv2
-from collections import Counter
+from collections import OrderedDict, Counter
 import random
 
 from evalscript import eval_singlemodel
@@ -333,6 +333,7 @@ class ObjectReasoner():
             ML_rank = self.predictions[i, :K]
             spatialforML = np.copy(ML_rank)
             if sizerank is not None:  #both size and ML are leveraged, spatial acts as 3rd judgement
+                # 3 judges case
                 size_rank = sizerank[i,:K]
                 spatialforsize = np.copy(size_rank)
                 if self.remapper[size_rank[0][0]] =='person': #skip space validation whenever top ML prediction is person
@@ -419,8 +420,9 @@ class ObjectReasoner():
 
                 if sizerank is not None and \
                         (not wn_syn_size or size_label=='person' or not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0)):
-                    spatialforsize[n][1] = 1.
-                    spatialforML[n][1] = 1.
+                    # 3 judges case
+                    spatialforsize[n][1] += 1.
+                    spatialforML[n][1] += 1.
                     continue
                 elif sizerank is None and \
                         (not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0)): #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
@@ -432,7 +434,7 @@ class ObjectReasoner():
                 #Tipicality scores based on VG stats
                 sub_syn = wn_syn
                 all_spatial_scores = []
-                if sizerank is not None:
+                if sizerank is not None: # 3 judges case
                     sub_syn_size = wn_syn_size
                     all_spatial_scores_size = []
                 fig_rs = list(set([r for _,_,r in fig_qsrs])) #distinct figure relations present
@@ -442,13 +444,13 @@ class ObjectReasoner():
                     else: obj_syn = self.taxonomy[ref]
                     if obj_syn =='': #reference obj is e.g., foosball table or pigeon holes (absent from background KB)
                         all_spatial_scores.append(1.) #add up 1. as if not found to not alter ML ranking and skip
-                        if sizerank is not None:
+                        if sizerank is not None: # 3 judges case
                             all_spatial_scores_size.append(1.)
                         continue
                     if r == 'touches':
                         if len(fig_rs) ==1: # touches is the only rel
                             all_spatial_scores.append(1.)  # add up 1. as if not found to not alter ML ranking and skip
-                            if sizerank is not None:
+                            if sizerank is not None: # 3 judges case
                                 all_spatial_scores_size.append(1.)
                             continue
                         else: continue #there are other types, just skip this one as not relevant for VG
@@ -456,7 +458,7 @@ class ObjectReasoner():
                         continue #beside already checked through L/R rel
                     elif r == 'leansOn' or r == 'affixedOn': r = 'against'  # mapping on VG predicate
                     all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores,sub_syn, obj_syn,r)
-                    if sizerank is not None:
+                    if sizerank is not None: # 3 judges case
                         all_spatial_scores_size = self.compute_all_scores(spatialDB, all_spatial_scores_size,sub_syn_size, obj_syn,r)
 
                 # Similarly, for QSRs where predicted obj is reference, i.e., object
@@ -469,34 +471,31 @@ class ObjectReasoner():
                     else: sub_syn = self.taxonomy[fig]
                     if sub_syn =='': #figure obj is e.g., foosball table or pigeon holes (absent from background KB)
                         all_spatial_scores.append(1.) #add up 1. as if not found to not alter ML ranking and skip
-                        if sizerank is not None:
+                        if sizerank is not None: # 3 judges case
                             all_spatial_scores_size.append(1.)
                         continue
                     if r == 'touches':
                         if len(ref_rs) ==1: # touches is the only rel
                             all_spatial_scores.append(1.)  # add up 1. as if not found to not alter ML ranking and skip
-                            if sizerank is not None:
+                            if sizerank is not None: # 3 judges case
                                 all_spatial_scores_size.append(1.)
                             continue
                         else: continue #there are other types, just skip this one as not relevant for VG
                     elif r=='beside': continue  # touches not useful for VG predicates, beside already checked through L/R rel
                     elif r =='leansOn' or r=='affixedOn': r = 'against' #mapping on VG predicate
                     all_spatial_scores = self.compute_all_scores(spatialDB, all_spatial_scores, sub_syn, obj_syn, r)
-                    if sizerank is not None:
+                    if sizerank is not None: # 3 judges case
                         all_spatial_scores_size = self.compute_all_scores(spatialDB, all_spatial_scores_size, sub_syn, obj_syn_size, r)
 
                 # Average across all QSRs
                 avg_spatial_score = statistics.mean(all_spatial_scores)
+                spatialforML[n][1] += avg_spatial_score  # add up to ML score
                 if sizerank is not None:
-                    # changed: rewrite original score instead of adding up
-                    spatialforML[n][1] = avg_spatial_score
+                    # adding up to original score
                     avg_spatial_score_size = statistics.mean(all_spatial_scores_size)
 
-                    # changed: rewrite original score instead of adding up
-                    spatialforsize[n][1] = avg_spatial_score_size
-                else:
-                    spatialforML[n][1] += avg_spatial_score  # add up to ML score
-
+                    # adding up to original score
+                    spatialforsize[n][1] += avg_spatial_score_size
 
             # Normalise scores across classes, so it is between 0 and 1
             # minmax norm
@@ -511,9 +510,10 @@ class ObjectReasoner():
             print(read_phoc_rank)  # posthoc rank in human readable form
 
             #add plausible spatial objects to joint voting
-            if sizerank is not None:
+            if sizerank is not None: # 3 judges case
                 spatial_classes = [cnum for cnum,jdis in posthoc_rank if jdis < 1.]
                 scores = spatialforsize[:, 1]
+                # apply minmax norm to spatialforsize rank too
                 min_, max_ = np.min(scores), np.max(scores)
                 if max_ - min_ != 0:  # avoid division by zero
                     spatialforsize[:, 1] = np.array([(x - min_) / (max_ - min_) for x in scores])
@@ -522,34 +522,56 @@ class ObjectReasoner():
                 read_phoc_rank_size = [(self.remapper[posthoc_rank_size[z, 0]], posthoc_rank_size[z, 1]) for z in
                                   range(posthoc_rank_size.shape[0])]
                 print(read_phoc_rank_size)  # posthoc rank in human readable form
-                spatial_classes.extend([cnum for cnum, jdis in posthoc_rank_size if jdis < 1.])
+                spatial_classes.extend([cnum for cnum, jdis in posthoc_rank_size if jdis < 1.]) # full class set
                 if len(spatial_classes)==0:
                     #there were no useful scores through spatial reasoning
                     self.predictions[i, :K] = size_rank
                     print("Keep size ranking")
                     continue
-                votes = Counter(spatial_classes)
-                #Fill up list with duplicates in order from most common to least common
-                # so that final ranking is still K positions long
-                finrank_list = []
-                foundwinner = False
-                for k, (l, num) in enumerate(votes.most_common(K)):
-                    if k==0 and num ==1: #there is no clear winner,
-                        #keep original ML predictions, i.e., do not change self.predictions and skip
-                        break
-                    remaining_spots = K - len(finrank_list)
-                    if num<= remaining_spots: cap = num
-                    else: cap = remaining_spots
-                    for r in range(cap): finrank_list.append((l,0.))
-                    remaining_spots = K - len(finrank_list)
-                    if remaining_spots==0: #reached end of topK
-                        foundwinner = True
-                        break #stop at topK
-                if foundwinner: final_rank = np.array(finrank_list,dtype='object') #order by number of votes
-                else:
+                # Borda count positional voting system
+                # the higher the position in the ranking the higher the points assigned
+                votes = {cl: 0. for cl in spatial_classes}
+                # votes = Counter(spatial_classes)
+                # spatialML_ord = [(cnum, K-(m+1)) for m,(cnum,jdis) in enumerate(posthoc_rank) if jdis < 1.]
+                for m,(cnum,jdis) in enumerate(posthoc_rank):
+                    if jdis < 1.:
+                        votes[cnum] += K-(m+1)
+                # spatialsize_ord = [(cnum, K-(m+1)) for m,(cnum,jdis) in enumerate(posthoc_rank_size) if jdis < 1.]
+
+                for m, (cnum, jdis) in enumerate(posthoc_rank_size):
+                    if jdis < 1.:
+                        votes[cnum] += K - (m + 1)
+
+                #if there are ties
+                s_ = list(votes.values())
+                c_ = list(votes.keys())
+                if s_[0] == s_[1]:
                     self.predictions[i, :K] = size_rank
                     print("Keep size validated ranking")
                     continue
+                else:
+                    # Fill up list with duplicates in order from most common to least common
+                    # so that final ranking is still K positions long
+                    to_fill = K - len(c_)
+                    topl, tops = c_[0], s_[0]
+
+                    # fill remaining positions with top scores
+                    finrank_list = [(l,num) for l, num in votes.items()]
+                    for num in range(to_fill):
+                        finrank_list.append((topl,tops))
+                    #reorder list in the end
+                    finrank_list.sort(key=lambda x: x[1], reverse=True)
+                    """for k, (l, num) in enumerate(votes.keys()): #enumerate(votes.most_common(K)):
+                        
+                        remaining_spots = K - len(finrank_list)
+                        if num<= remaining_spots: cap = num
+                        else: cap = remaining_spots
+                        for r in range(cap): finrank_list.append((l,0.))
+                        remaining_spots = K - len(finrank_list)
+                        if remaining_spots==0: #reached end of topK
+                            break #stop at topK"""
+                    final_rank = np.array(finrank_list,dtype='object') #order by number of votes
+
             else:
                 # use spatial ranking combined with Ml score directly
                 final_rank = posthoc_rank
