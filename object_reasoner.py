@@ -124,9 +124,10 @@ class ObjectReasoner():
                               >= self.epsilon_set[0]] # # select for correction, based on confidence, i.e., L2 distance greater than threshold
                     neg_tbcorr = [id_ for id_ in subimg_ids if self.predictions[self.fnames.index(id_), 0, 1] \
                               < self.epsilon_set[0]]
-                    if self.reasoner_type =='size_spatial':
+                    QSRcandidates = img_ids
+                    """if self.reasoner_type =='size_spatial':
                         tbcorr, QSRcandidates = self.size_select(list(subimg_ids.keys()), list(img_ids.keys()), neg_tbcorr, sizeKB, (tmp_conn,tmp_cur)) # check which ones have a top-1 prediction which is valid wrt size
-                    else: QSRcandidates = img_ids
+                    else: QSRcandidates = img_ids"""
                 else:
                     tbcorr = img_ids  # validate all
                     QSRcandidates = img_ids

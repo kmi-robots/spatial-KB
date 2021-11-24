@@ -73,6 +73,8 @@ We provide a command line interface that can be run from terminal.
 **Please note that the first run takes much longer because the raw VG data are processed for the first time.** 
 Subsequent runs, instead, rely on the pre-processed VG data stored locally.
 
+Running the script also provides the variance of the evaluation metrics, to account for differences in the stratified Kfold splits across runs.
+
 ML and Size-only ablation:
 ```
 cd your-path-to/spatial-KB
