@@ -421,8 +421,8 @@ class ObjectReasoner():
                 if sizerank is not None and \
                         (not wn_syn_size or size_label=='person' or not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0)):
                     # 3 judges case
-                    spatialforsize[n][1] += 1.
-                    spatialforML[n][1] += 1.
+                    spatialforsize[n][1] = 1.
+                    spatialforML[n][1] = 1.
                     continue
                 elif sizerank is None and \
                         (not wn_syn or pred_label =='person' or (len(ref_qsrs)==0 and len(fig_qsrs)==0)): #objects that do not have a mapping to VG through WN (foosball table and pigeon holes)
@@ -491,11 +491,13 @@ class ObjectReasoner():
                 avg_spatial_score = statistics.mean(all_spatial_scores)
                 spatialforML[n][1] += avg_spatial_score  # add up to ML score
                 if sizerank is not None:
-                    # adding up to original score
+                    # changed: rewrite original score instead of adding up
+                    spatialforML[n][1] = avg_spatial_score
                     avg_spatial_score_size = statistics.mean(all_spatial_scores_size)
-
-                    # adding up to original score
-                    spatialforsize[n][1] += avg_spatial_score_size
+                    # changed: rewrite original score instead of adding up
+                    spatialforsize[n][1] = avg_spatial_score_size
+                else:
+                    spatialforML[n][1] += avg_spatial_score  # add up to ML score
 
             # Normalise scores across classes, so it is between 0 and 1
             # minmax norm
@@ -529,11 +531,50 @@ class ObjectReasoner():
                     print("Keep size ranking")
                     continue
 
-                votes = {cl: 0. for cl in spatial_classes} #votes = {cl: 0. for cl in spatial_classes}
-                # votes = Counter(spatial_classes)
+                votes = Counter(spatial_classes)
+
+                finrank_list = []
+                foundwinner = False
+                for k, (l, num) in enumerate(votes.most_common(K)):
+                    if k == 0 and num == 1:  # there is no clear winner,
+                        # keep original ML predictions, i.e., do not change self.predictions and skip
+                        break
+                    remaining_spots = K - len(finrank_list)
+                    if num <= remaining_spots:
+                        cap = num
+                    else:
+                        cap = remaining_spots
+                    for r in range(cap): finrank_list.append((l, 0.))
+                    remaining_spots = K - len(finrank_list)
+                    if remaining_spots == 0:  # reached end of topK
+                        foundwinner = True
+                        break  # stop at topK
+                if foundwinner:
+                    final_rank = np.array(finrank_list, dtype='object')  # order by number of votes
+                else:
+                    self.predictions[i, :K] = size_rank
+                    print("Keep size validated ranking")
+                    continue
+
+                """tot_votes = sum(votes.values())
+                votes = votes.most_common(K) #majority voting
+                #rank in the end based on spatial reasoner
+                spatialML_dict = {cnum: (1.-jdis) for cnum,jdis in posthoc_rank if jdis < 1.}
+                spatialsize_dict = {cnum: (1.-jdis) for cnum,jdis in posthoc_rank_size if jdis < 1.}
+                # typicality scores to compare with no of votes (ascending)
+                mod_votes = OrderedDict()
+                for l_,v_ in votes:
+                    if l_ in spatialML_dict.keys():
+                        mod_votes[l_] = (v_/tot_votes) + spatialML_dict[l_] # spatial score
+                    else:
+                        mod_votes[l_] = (v_/tot_votes) + spatialsize_dict[l_]  # spatial score
+
+                finrank_list = [(cnum, s) for cnum,s in mod_votes.items()]
+                finrank_list.sort(key=lambda x: x[1], reverse=True) # sort ascending"""
+
                 # Borda count positional voting system
                 # the higher the position in the ranking the higher the points assigned
-
+                """votes = {cl: 0. for cl in spatial_classes} #votes = {cl: 0. for cl in spatial_classes}
                 # spatialML_ord = [(cnum, K-(m+1)) for m,(cnum,jdis) in enumerate(posthoc_rank) if jdis < 1.]
                 for m,(cnum,jdis) in enumerate(posthoc_rank):
                     if jdis < 1.:
@@ -547,23 +588,24 @@ class ObjectReasoner():
 
                 # average class-wise
                 # finrank_list = [(l, statistics.mean(val)) for l,val in votes.items()]
-                # finrank_list.sort(key=lambda x: x[1]) # sort by score desc
-                #if there are ties
-                # if finrank_list[0][1] == finrank_list[1][1]:
-                #     self.predictions[i, :K] = size_rank
-                #     print("Keep size validated ranking")
-                #     continue
-                s_ = list(votes.values())
-                # c_ = list(votes.keys())
-                if s_[0] == s_[1]:
-                    self.predictions[i, :K] = size_rank
-                    print("Keep size validated ranking")
-                    continue
+                # finrank_list.sort(key=lambda x: x[1]) # sort by score ascending"""
 
+                #if there are ties
+                """if finrank_list[0][1] == finrank_list[1][1]:
+                     self.predictions[i, :K] = size_rank
+                     print("Keep size validated ranking")
+                     continue
+                     \"""s_ = list(votes.values())
+                     # c_ = list(votes.keys())
+                     if s_[0] == s_[1]:
+                            self.predictions[i, :K] = size_rank
+                            print("Keep size validated ranking")
+                            continue
+                     \"""
                 else:
                     # Fill up list with duplicates in order from most common to least common
                     # so that final ranking is still K positions long
-                    finrank_list = [(l, num) for l, num in votes.items()]
+                    # finrank_list = [(l, num) for l, num in votes.items()]
                     if len(finrank_list)< K:
                         to_fill = K - len(finrank_list)
                         topl, tops = finrank_list[0][0], finrank_list[0][1]
@@ -571,7 +613,7 @@ class ObjectReasoner():
                         for num in range(to_fill): # fill remaining positions with top scores
                             finrank_list.append((topl,tops))
                         finrank_list.sort(key=lambda x: x[1], reverse=True) #reorder list in the end, scores descending
-                        """for k, (l, num) in enumerate(votes.keys()): #enumerate(votes.most_common(K)):
+                        \"""for k, (l, num) in enumerate(votes.keys()): #enumerate(votes.most_common(K)):
                             
                             remaining_spots = K - len(finrank_list)
                             if num<= remaining_spots: cap = num
@@ -579,11 +621,11 @@ class ObjectReasoner():
                             for r in range(cap): finrank_list.append((l,0.))
                             remaining_spots = K - len(finrank_list)
                             if remaining_spots==0: #reached end of topK
-                                break #stop at topK"""
+                                break #stop at topK\"""
                     else:
                         finrank_list = finrank_list[:K] #only keep top-5
                     final_rank = np.array(finrank_list,dtype='object') #order by number of votes
-
+                """
             else:
                 # use spatial ranking combined with Ml score directly
                 final_rank = posthoc_rank
