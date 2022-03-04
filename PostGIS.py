@@ -101,11 +101,20 @@ def create_boxes(dbobj, sf=1.2):
 
         # Derive CBB
         dbobj.cursor.execute(
-            'SELECT ST_Angle(ST_MakeLine(robot_position, ST_Centroid(ST_OrientedEnvelope(projection_2d))), '
-            'ST_MakeLine(ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 1), '
-            'ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2))) '
-            'FROM semantic_map '
-            'WHERE object_id = \'' + id_ + '\';')
+             'SELECT ST_Angle(ST_MakeLine(robot_position, ST_Centroid(ST_OrientedEnvelope(projection_2d))), '
+             'ST_MakeLine(ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 1), '
+             'ST_PointN(ST_ExteriorRing(ST_OrientedEnvelope(projection_2d)), 2))) '
+             'FROM semantic_map '
+             'WHERE object_id = \'' + id_ + '\';')
+
+        #Angle between:
+        # 1) line connecting robot position and object centroid
+        # 2) line connecting robot position with closest point on 2D envelope of object
+        # dbobj.cursor.execute(
+        #     'SELECT ST_Angle(ST_MakeLine(robot_position, ST_Centroid(ST_OrientedEnvelope(projection_2d))), '
+        #     'ST_ShortestLine(robot_position,ST_OrientedEnvelope(projection_2d))) '
+        #     'FROM semantic_map '
+        #     'WHERE object_id = \'' + id_ + '\';')
 
         dbobj.connection.commit()
 
@@ -218,7 +227,7 @@ def find_neighbours(session, ref_id, ordered_objs,T=2):
     nearby = [t[0] for t in tmp_cur.fetchall()]
     return [id_ for id_ in nearby if id_ in candidates] # return only the ones which are both nearby and smaller than
 
-def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
+def extract_QSR(session, ref_id, figure_objs, qsr_graph, int_perc=0.05):
     """
     Expects qsrs to be collected as nx.MultiDGraph
     D is the space granularity as defined in the paper"""
@@ -231,7 +240,7 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
         #Use postGIS for deriving truth values of base operators
         # tmp_conn, tmp_cur = connect_DB(us,dbname)
         try:
-            tmp_cur.execute('SELECT ST_3DDWithin(fig.bbox,reff.bbox, 0)'
+            tmp_cur.execute('SELECT ST_3DDWithin(fig.object_polyhedral_surface,reff.object_polyhedral_surface, 0)'
                             ' from semantic_map as reff, semantic_map as fig'
                             ' WHERE reff.object_id = %s'\
                         ' AND fig.object_id = %s', (ref_id,figure_id))
@@ -245,31 +254,40 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
             print(ref_id + " " + figure_id)
             return qsr_graph
         try:
-            tmp_cur.execute('SELECT ST_3DIntersects(fig.bbox,reff.tophsproj),ST_3DIntersects(fig.bbox,reff.bottomhsproj)'
+            """tmp_cur.execute('SELECT ST_3DIntersects(fig.bbox,reff.tophsproj),ST_3DIntersects(fig.bbox,reff.bottomhsproj)'
                             ' from semantic_map as reff, semantic_map as fig'
                             ' WHERE reff.object_id = %s' \
-                            ' AND fig.object_id = %s', (ref_id, figure_id))
+                            ' AND fig.object_id = %s', (ref_id, figure_id))"""
+            #causes degenerate cases of 1 pixel overlap, changing to thresholds
+            tmp_cur.execute(
+                'SELECT ST_Volume(ST_3DIntersection(fig.bbox,reff.tophsproj)),ST_Volume(ST_3DIntersection(fig.bbox,reff.bottomhsproj)), ST_Volume(fig.bbox)'
+                ' from semantic_map as reff, semantic_map as fig'
+                ' WHERE reff.object_id = %s' \
+                ' AND fig.object_id = %s', (ref_id, figure_id))
             res = tmp_cur.fetchone()
-            if res[0] is True:
+            figvol = res[2]
+            if res[0] > figvol*int_perc: #intersection is at list x% of volume of figure obj
                 qsr_graph.add_edge(figure_id, ref_id, QSR='above')
                 isAbove = True
-            if res[1] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='below')
+            if res[1] >figvol*int_perc: qsr_graph.add_edge(figure_id, ref_id, QSR='below')
         except:
             print("Query too large, server problem raised")
             print(ref_id + " " + figure_id)
             return qsr_graph
 
         try:
-            tmp_cur.execute('SELECT ST_3DIntersects(fig.bbox,reff.lefthsproj),ST_3DIntersects(fig.bbox,reff.righthsproj)'
+            tmp_cur.execute('SELECT ST_Volume(ST_3DIntersection(fig.bbox,reff.lefthsproj)),ST_Volume(ST_3DIntersection(fig.bbox,reff.righthsproj)),'
+                            'ST_Volume(fig.bbox)'
                             ' from semantic_map as reff, semantic_map as fig'
                             ' WHERE reff.object_id = %s' \
                             ' AND fig.object_id = %s', (ref_id, figure_id))
             res = tmp_cur.fetchone()
-            if res[0] is True:
+            figvol = res[2]
+            if res[0] >figvol*int_perc:
                 qsr_graph.add_edge(figure_id, ref_id, QSR='leftOf')
                 qsr_graph.add_edge(figure_id, ref_id, QSR='beside')
 
-            if res[1] is True:
+            if res[1]>figvol*int_perc:
                 qsr_graph.add_edge(figure_id, ref_id, QSR='rightOf')
                 qsr_graph.add_edge(figure_id, ref_id, QSR='beside')
 
@@ -278,14 +296,16 @@ def extract_QSR(session, ref_id, figure_objs, qsr_graph, D=1.0):
             print(ref_id + " " + figure_id)
             return qsr_graph
         try:
-            tmp_cur.execute('SELECT ST_3DIntersects(fig.bbox,reff.fronthsproj), ST_3DIntersects(fig.bbox,reff.backhsproj)'
+            tmp_cur.execute('SELECT ST_Volume(ST_3DIntersection(fig.bbox,reff.fronthsproj)), ST_Volume(ST_3DIntersection(fig.bbox,reff.backhsproj)),'
+                            'ST_Volume(fig.bbox)'
                             ' from semantic_map as reff, semantic_map as fig'
                             ' WHERE reff.object_id = %s' \
                             ' AND fig.object_id = %s', (ref_id, figure_id))
             res = tmp_cur.fetchone()
-            if res[0] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='inFrontOf')
+            figvol = res[2]
+            if res[0] >figvol*int_perc: qsr_graph.add_edge(figure_id, ref_id, QSR='inFrontOf')
 
-            if res[1] is True: qsr_graph.add_edge(figure_id, ref_id, QSR='behind')
+            if res[1] >figvol*int_perc: qsr_graph.add_edge(figure_id, ref_id, QSR='behind')
 
         except:
             print("Query too large, server problem raised")
@@ -346,6 +366,8 @@ def infer_special_ON(local_graph):
     for node1 in local_graph.nodes():
         # if obj1 touches or is touched by obj2
         #cobj = lmapping[node1]
+        #if node1 =='2020-05-15-11-03-03_130652_poly0':
+        #    print("Hold on")
         t = [(f,ref,r) for f,ref,r in local_graph.out_edges(node1, data=True) if r['QSR'] =='touches']
         is_t = [(f,ref,r) for f,ref,r in local_graph.in_edges(node1, data=True) if r['QSR'] =='touches']
         is_a = [f for f,_,r in local_graph.in_edges(node1, data=True) if r['QSR']=='below'] #edges where obj1 is reference and figure objects are below it

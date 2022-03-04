@@ -1,0 +1,9 @@
+image_id,region_num,gt_label,OnTopOf,LeansOn,AffixedOn,LeftOf,RightOf,Above,Below,InFrontOf,Behind,Inside,PartIn
+2020-05-15-11-03-03_130652,0,fire_extinguisher_sign,,,wall,,,poly0,,,,,
+,1,fire_extinguisher_sign,,,wall,,0,"poly1,poly0",,,,,
+,2,fire_extinguisher_sign,,,wall,,"0,1",poly1,,,,,
+,poly0,fire_extinguisher,,,wall,"poly1,poly3",poly2,,,,,,
+,poly1,fire_extinguisher,floor,wall,,poly3,,,,,,,
+,poly2,rubbish_bin,floor,wall,,"poly3,poly1",,,,,,,
+,poly3,radiator,floor,wall,,,,,,,,,
+,poly4,fire_alarm_call_asembly_point_sign,,,wall,,,poly3,,,,,
