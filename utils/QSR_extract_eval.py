@@ -2,7 +2,7 @@ from PostGIS import *
 import pandas as pd
 import sys, os
 import networkx as nx
-import statistics as stats
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from utils.graphs import plot_graph
 
 def populate_with_boxes(connection,cursor, sf=1.2):
@@ -192,66 +192,108 @@ def populate_with_boxes(connection,cursor, sf=1.2):
         connection.commit()
 
 
-def format_ground_truth(iid,dataf,ldict):
-    dataf = dataf[dataf['image_id']==iid]
-    objects = dataf['region_num'].tolist()
+def format_ground_truth(dataf,ldict):
 
-    for obj in objects:
-        row = dataf[dataf['region_num']==obj]
+    for r_ in ldict.keys():
+        rel_col = dataf[r_].dropna()
+        for ridx, rval in rel_col.iteritems():
 
-    return ldict
+            row = dataf.iloc[[ridx]]  # extract row for value in column
+            obj1 = row['image_id'].tolist()[0] + '_' + row['region_num'].tolist()[0]
+
+            if rval =='floor' or rval=='wall':
+                obj2 = rval
+                ldict[r_].append((obj1, obj2))
+            else:
+                refs = rval.split(',')
+                if len(refs)>1:
+                    for ref in refs:
+                        obj2 = row['image_id'].tolist()[0] + '_' + ref
+                        if ref == 'floor' or ref == 'wall':
+                            obj2 = ref
+                        ldict[r_].append((obj1, obj2))
+                else:
+                    obj2 = row['image_id'].tolist()[0] + '_' + rval
+                    ldict[r_].append((obj1, obj2))
+
+    return {r_.lower():v_ for r_,v_ in ldict.items()}
 
 
 def eval_QSR(relations,gt_dict):
-    pass
+
+    for k,nodelist in gt_dict.items():
+        print("----Evaluating relation %s----" % k)
+        extr_rels = relations[k]
+        gtlabs = []
+        preds = []
+        for o1,o2 in nodelist:
+            gtlabs.append(1)
+            if (o1, o2) in extr_rels:
+                preds.append(1)
+            else:
+                print("Missing %s %s %s" % (o1,k,o2))
+                preds.append(0)
+
+        acc = accuracy_score(gtlabs,preds) #float(len([p for p in preds if p==1])/len(gtlabs))
+        p,r,f1,supp = precision_recall_fscore_support(gtlabs,preds) #p,r,f1,supp = precision_recall_fscore_support(gtlabs,preds,output_dict=True)
+        print("Accuracy: %f" % acc)
+        print("Precision: %f, Recall: %f, F1: %f" % (p[1],r[1],f1[1]))
+        print("Suppport: %i" % int(supp[1]))
 
 def main():
-    imgid_list =['2020-05-15-11-12-27_125515']#2020-05-15-11-23-56_539346']#'2020-05-15-11-15-14_046537']##'2020-05-15-11-03-03_130652']
+
     path_to_annotations = './data/annotated_QSR_subset.csv'
     df = pd.read_csv(path_to_annotations)
+    imgid_list = list(set(df['image_id'].tolist()))
+
     target_rels = [r for r in list(df.columns.values) if r not in ['image_id','region_num','gt_label']]
-    target_nums = list(range(len(target_rels)))
-    gtruth = {r.lower():[] for r in target_rels}
+    # target_nums = list(range(len(target_rels)))
+    gtruth = {r:[] for r in target_rels}
     extracted={r.lower():[] for r in target_rels}
 
-    session = connect_DB(os.environ['USER'], 'gis_database')
-    populate_with_boxes(*session) #to exec only on first run
+    #Prep ground truth annotations
+    gtruth = format_ground_truth(df,gtruth)
 
-    print("DB updated with boxes")
-    for imgid in imgid_list:
+    #Extract QSR from data
+    # populate_with_boxes(*session) #to exec only on first run
+
+    # print("DB updated with boxes")
+    for imgid in imgid_list: #['2020-05-15-11-03-03_130652']: #imgid_list
+        session = connect_DB(os.environ['USER'], 'gis_database')
         QSRs = nx.MultiDiGraph()
-        gtruth = format_ground_truth(imgid,df,gtruth)
         ids_ord = retrieve_ids_ord(session, imgid) # find all spatial regions at timestamp in db and order by volume desc
-        print(list(ids_ord.keys()))
+
         QSRs.add_nodes_from(ids_ord.keys())
         for i, o_id in enumerate(ids_ord.keys()):
             figure_objs = find_neighbours(session, o_id, ids_ord)
             if len(figure_objs) > 0:
                 QSRs = extract_QSR(session, o_id, figure_objs, QSRs) # relations between objects
-            QSRs = extract_surface_QSR(session, o_id, QSRs,fht=0.15, wht=0.2) # relations with walls and floor
+            QSRs = extract_surface_QSR(session, o_id, QSRs,fht=0.15, wht=0.259) # relations with walls and floor
         # after all reference objects have been examined
         # derive special cases of ON
         QSRs = infer_special_ON(QSRs)
 
-    # plot_graph(QSRs)
-    QSRs_fil = QSRs.copy() # remove redundant rels
-    # print(QSRs_fil.edges(data=True,keys=True))
-    for (n1, n2, k, d) in QSRs.edges(data=True,keys=True):
-        rel_name = d['QSR']
-        print(n1+' '+rel_name+' '+n2)
-        rem =False
-        if rel_name =='touches' or rel_name=='beside' or rel_name=='near':
-            QSRs_fil.remove_edge(n1,n2,k)
-            rem=True
-        if n1 =='wall' or n1=='floor' and not rem:
-            QSRs_fil.remove_edge(n1,n2, k) #and not already removed above
-            rem=True
-        if not rem:
-            extracted[rel_name.lower()].append((n1,n2)) #add to predictions
-    print(extracted)
+        #When on top of, remove above -- if affixed on, consider also InFrontOf,L,R or behind
 
-    disconnect_DB(*session)
-    eval_QSR(QSRs,gtruth)
+        # plot_graph(QSRs)
+        QSRs_fil = QSRs.copy() # remove redundant rels
+        # print(QSRs_fil.edges(data=True,keys=True))
+        for (n1, n2, k, d) in QSRs.edges(data=True,keys=True):
+            rel_name = d['QSR']
+            print(n1+' '+rel_name+' '+n2)
+            rem =False
+            if rel_name =='touches' or rel_name=='beside' or rel_name=='near':
+                QSRs_fil.remove_edge(n1,n2,k)
+                rem=True
+            if n1 =='wall' or n1=='floor' and not rem:
+                QSRs_fil.remove_edge(n1,n2, k) #and not already removed above
+                rem=True
+            if not rem:
+                extracted[rel_name.lower()].append((n1,n2)) #add to predictions
+        disconnect_DB(*session)
+        print("-------------------------")
+
+    eval_QSR(extracted,gtruth)
 
 
 if __name__ == '__main__':
