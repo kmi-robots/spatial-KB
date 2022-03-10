@@ -66,7 +66,7 @@ python3 ./utils/spatial_prep.py
 ```
 
 ## Test the extraction of spatial relations
-To test/evaluate only the extraction of spatial relations, i.e., without reasoning on Visual Genome:
+To test/evaluate only the extraction of spatial relations from a subset of images, i.e., without reasoning on Visual Genome:
 
 ```
 python3 ./utils/QSR_extract_eval.py

@@ -233,6 +233,11 @@ def eval_QSR(relations,gt_dict):
             else:
                 print("Missing %s %s %s" % (o1,k,o2))
                 preds.append(0)
+        #then consider extracted QSR that are not in ground truth
+        fps = [(o1,o2) for o1,o2 in extr_rels if (o1,o2) not in nodelist]
+        for fp in fps:
+            gtlabs.append(0)
+            preds.append(1)
 
         acc = accuracy_score(gtlabs,preds) #float(len([p for p in preds if p==1])/len(gtlabs))
         p,r,f1,supp = precision_recall_fscore_support(gtlabs,preds) #p,r,f1,supp = precision_recall_fscore_support(gtlabs,preds,output_dict=True)
